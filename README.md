@@ -48,3 +48,8 @@ This was inspired by [ugit](https://github.com/turfptax/ugit), which didn't work
 - HTTP authentication for non-public projects.
 - `clone` is currently unfinished.
 - Support branches / tags.
+
+## Tests
+- `pytest test_localhost.py` (run `nginx -c "$(pwd)/test_nginx.conf" -e stderr` in the background)
+- `pytest test_gh.py` (runs tests against github)
+- `pytest test_esp32.py` (**WARNING:** will wipe all files except `boot.py` from your device.)
