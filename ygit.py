@@ -42,15 +42,12 @@ class DecompIO:
     global _master_decompio
     #print('read', self._id, 'actual', id(_master_decompio), nbytes)
     assert self._id == id(_master_decompio)
-    bytes = _master_decompio.read(nbytes)
-    return bytes
+    return _master_decompio.read(nbytes)
     
   def readline(self):
     global _master_decompio
     assert self._id == id(_master_decompio)
-    line = _master_decompio.readline()
-    #print('line',line)
-    return line
+    return _master_decompio.readline()
     
 
 try:
