@@ -29,11 +29,11 @@ These are incremental operations.  It will only download git objects you don't a
 ## API
 ```python
 ygit.init(repo, directory, cone=None)
-ygit.clone(repo, directory, shallow=True, cone=None, quiet=False, commit='HEAD')
-ygit.checkout(directory, commit='HEAD')
-ygit.pull(directory, shallow=True, quiet=False, commit='HEAD')
-ygit.fetch(directory, shallow=True, quiet=False, commit='HEAD')
-ygit.status(directory, commit='HEAD')
+ygit.clone(repo, directory, shallow=True, cone=None, quiet=False, rev='HEAD')
+ygit.checkout(directory, rev='HEAD')
+ygit.pull(directory, shallow=True, quiet=False, rev='HEAD')
+ygit.fetch(directory, shallow=True, quiet=False, rev='HEAD')
+ygit.status(directory, rev='HEAD')
 ```
 ### Shallow Cloning
 By default clones are [shallow](https://github.blog/2020-12-21-get-up-to-speed-with-partial-clone-and-shallow-clone/) to save space.

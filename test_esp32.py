@@ -8,12 +8,13 @@ import ygit
 from test_localhost import build_repo
 
 pyb = None
+initted = False
 
 def init_board():
-  global pyb
-  if pyb: return pyb
+  global pyb, initted
+  if not pyb:
+    pyb = ampy.pyboard.Pyboard('/dev/ttyUSB0', baudrate=115200)
   print('clearing esp32...')
-  pyb = ampy.pyboard.Pyboard('/dev/ttyUSB0', baudrate=115200)
   board_files = ampy.files.Files(pyb)
   existing_files = board_files.ls(long_format=False)
   for fn in existing_files:
@@ -23,7 +24,9 @@ def init_board():
       board_files.rm(fn)
     except ampy.pyboard.PyboardError:
       board_files.rmdir(fn)
+  if initted: return pyb
   print('copying ygit...')
+  initted = True
   with open('ygit.py','rb') as f:
     board_files.put('ygit.py.gz', zlib.compress(f.read()))
   pyb.enter_raw_repl()
@@ -56,11 +59,11 @@ def test_checkout_status():
   pyb.enter_raw_repl()
   pyb.exec_('import ygit, io', stream_output=True)
   pyb.exec_("ygit.init('https://github.com/turfptax/ugit_test.git','ugit_test')", stream_output=True)
-  pyb.exec_("ygit.fetch('ugit_test', commit='7e5c62596935f96518a931f97ded52b6e8b01594')", stream_output=True)
-  pyb.exec_("ygit.checkout('ugit_test', commit='7e5c62596935f96518a931f97ded52b6e8b01594')", stream_output=True)
-  pyb.exec_("ygit.fetch('ugit_test', commit='cde9c4e1c7a178bb81ccaefb74824cc01e3638e7')", stream_output=True)
+  pyb.exec_("ygit.fetch('ugit_test', rev='7e5c62596935f96518a931f97ded52b6e8b01594')", stream_output=True)
+  pyb.exec_("ygit.checkout('ugit_test', rev='7e5c62596935f96518a931f97ded52b6e8b01594')", stream_output=True)
+  pyb.exec_("ygit.fetch('ugit_test', rev='cde9c4e1c7a178bb81ccaefb74824cc01e3638e7')", stream_output=True)
   pyb.exec_('out = io.StringIO()', stream_output=True)
-  pyb.exec_("ygit.status('ugit_test', commit='cde9c4e1c7a178bb81ccaefb74824cc01e3638e7', out=out)", stream_output=True)
+  pyb.exec_("ygit.status('ugit_test', rev='cde9c4e1c7a178bb81ccaefb74824cc01e3638e7', out=out)", stream_output=True)
   out = pyb.exec_('print(out.getvalue())')
   pyb.exit_raw_repl()
   assert out==b'A ugit_test/Folder\r\nA ugit_test/Folder\r\nD /README.md\r\nD /boot.py\r\nA ugit_test/Folder/SubFolder\r\nA ugit_test/Folder/SubFolder\r\nD /Folder/in_second.py\r\nD /Folder/SubFolder/third_layer.py\r\n\r\n'
@@ -68,7 +71,7 @@ def test_checkout_status():
 
 
 # this repo will fill up the flash, then OSError: 28
-# ygit.clone('https://github.com/gitpython-developers/GitPython.git','GitPython', commit='f25333525425ee1497366fd300a60127aa652d79')
+# ygit.clone('https://github.com/gitpython-developers/GitPython.git','GitPython', rev='f25333525425ee1497366fd300a60127aa652d79')
 
 
 if __name__=='__main__':
