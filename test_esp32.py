@@ -1,4 +1,4 @@
-import os, tempfile, zlib, io
+import os, tempfile, zlib, io, socket
 
 import ampy.files
 import ampy.pyboard
@@ -69,6 +69,34 @@ def test_checkout_status():
   assert out==b'A ugit_test/Folder\r\nA ugit_test/Folder\r\nD /README.md\r\nD /boot.py\r\nA ugit_test/Folder/SubFolder\r\nA ugit_test/Folder/SubFolder\r\nD /Folder/in_second.py\r\nD /Folder/SubFolder/third_layer.py\r\n\r\n'
 
 
+def test_branch():
+  pyb = init_board()
+  pyb.enter_raw_repl()
+  git, d = build_repo()
+  with open(os.path.join(d,'test.txt'),'w') as f:
+    f.write('v1')
+  git.add('test.txt')
+  git.commit('test.txt', message='v1')
+  git.checkout('-b', 'abranch')
+  with open(os.path.join(d,'branch.txt'),'w') as f:
+    f.write('a branch')
+  git.add('branch.txt')
+  git.commit('branch.txt', message='added a branch')
+  git.checkout('master')
+  pyb.exec_('import ygit, io, os', stream_output=True)
+  pyb.exec_(f"ygit.init('http://{get_ip()}:8889/{os.path.basename(d)}','test_branch')", stream_output=True)
+  pyb.exec_("ygit.fetch('test_branch')", stream_output=True)
+  pyb.exec_("ygit.checkout('test_branch')", stream_output=True)
+  assert b'v1\r\n' == pyb.exec_("f = open('test_branch/test.txt','r'); print(f.read())")
+  pyb.exec_("ygit.checkout('test_branch', ref='abranch')", stream_output=True)
+  assert b'a branch\r\n' == pyb.exec_("f = open('test_branch/branch.txt','r'); print(f.read())")
+
+
+def get_ip():
+  import socket
+  with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+    s.connect(("8.8.8.8", 80))
+    return s.getsockname()[0]
 
 # this repo will fill up the flash, then OSError: 28
 # ygit.clone('https://github.com/gitpython-developers/GitPython.git','GitPython', ref='f25333525425ee1497366fd300a60127aa652d79')

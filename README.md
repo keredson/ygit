@@ -40,6 +40,7 @@ A `ref` is one of:
 - a commit id (40 character hex string)
 - a branch name
 - a tag
+- a pull
 
 ### Shallow Cloning
 By default clones are [shallow](https://github.blog/2020-12-21-get-up-to-speed-with-partial-clone-and-shallow-clone/) to
