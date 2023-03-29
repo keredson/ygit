@@ -20,23 +20,22 @@ except ImportError:
     f.seek(f.tell()-len(dco.unused_data))
     return io.BytesIO(dec)
 
-#print('mem_free before _master_decompio', gc.mem_free())
+print('mem_free before _master_decompio', gc.mem_free())
 _master_decompio = _DecompIO(io.BytesIO(b'x\x9c\x03\x00\x00\x00\x00\x01'))
-#print('mem_free after _master_decompio', gc.mem_free())
+print('mem_free after _master_decompio', gc.mem_free())
 
 class DecompIO:
 
   def __init__(self, f):
     global _master_decompio
-    gc.collect()
-    #print('mem_free before dealloc', id(_master_decompio), gc.mem_free())
+    gc.collect() # wtf - commenting out this line will cause OOM
+    print('mem_free before dealloc', id(_master_decompio), gc.mem_free()) #wtf2 - same
     del _master_decompio
-    #assert '_master_decompio' not in globals()
     gc.collect()
-    #print('mem_free before after dealloc', gc.mem_free())
+    #print('mem_free after dealloc', gc.mem_free())
     _master_decompio = _DecompIO(f)
     self._id = id(_master_decompio)
-    #print('mem_free dealloc alloc', self._id, gc.mem_free())
+    #print('mem_free after alloc', self._id, gc.mem_free())
 
   def read(self, nbytes):
     global _master_decompio
@@ -88,7 +87,6 @@ class DB:
     else:
       with open(self._fn,'wb') as f:
         pickle.dump(self._db, f)
-        #print('saving', self._fn, self._db)
     if self._f: self._f.close()
 
   def __setitem__(self, key, item):
@@ -168,51 +166,42 @@ class _ObjReader:
     self.f = f
     self.start = f.tell()
     self.kind, self.size = _read_kind_size(f)
-    #print('osize:', self.size)
   
   # https://git-scm.com/docs/pack-format#_deltified_representation
   def _parse_ods_delta(self):
     if hasattr(self, 'cmds'): return
-    #print('_parse_ods_delta')
     offset = _read_offset(self.f)
     self.base_object_offset = self.start - offset
-    #print('obase_object_offset', self.base_object_offset, self.start, offset)
-    #print('DecompIO')
-    try:
-      dec_stream = DecompIO(self.f)
-      self.cmds = []
-      pos = 0
-      base_size = _read_little_size(dec_stream)
-      self.size = obj_size = _read_little_size(dec_stream)
-      #print('_handle_delta2', 'base_size', base_size, 'obj_size', obj_size)
-      while ch := dec_stream.read(1):
-        byt = ch[0]
-        if byt == 0x00: continue
-        if (byt & 0x80) != 0: # copy command
-          vals = io.BytesIO()
-          for i in range(7):
-            bmask = 1 << i
-            if (byt & bmask) != 0:
-              vals.write(dec_stream.read(1))
-            else:
-              vals.write(b'\x00')
-          start = int.from_bytes(vals.getvalue()[0:4], 'little')
-          nbytes = int.from_bytes(vals.getvalue()[4:6], 'little')
-          if nbytes == 0:
-            nbytes = 0x10000
-          self.cmds.append(_ODSDeltaCmd(pos, None, start, nbytes))
-          pos += nbytes
-        else: # append command
-          nbytes = byt & 0x7f
-          to_append = dec_stream.read(nbytes)
-          assert nbytes==len(to_append)
-          self.cmds.append(_ODSDeltaCmd(pos, to_append, None, nbytes))
-          pos += nbytes
-    finally:
-      del dec_stream
+    dec_stream = DecompIO(self.f)
+    self.cmds = []
+    pos = 0
+    base_size = _read_little_size(dec_stream)
+    self.size = obj_size = _read_little_size(dec_stream)
+    while ch := dec_stream.read(1):
+      byt = ch[0]
+      if byt == 0x00: continue
+      if (byt & 0x80) != 0: # copy command
+        vals = io.BytesIO()
+        for i in range(7):
+          bmask = 1 << i
+          if (byt & bmask) != 0:
+            vals.write(dec_stream.read(1))
+          else:
+            vals.write(b'\x00')
+        start = int.from_bytes(vals.getvalue()[0:4], 'little')
+        nbytes = int.from_bytes(vals.getvalue()[4:6], 'little')
+        if nbytes == 0:
+          nbytes = 0x10000
+        self.cmds.append(_ODSDeltaCmd(pos, None, start, nbytes))
+        pos += nbytes
+      else: # append command
+        nbytes = byt & 0x7f
+        to_append = dec_stream.read(nbytes)
+        assert nbytes==len(to_append)
+        self.cmds.append(_ODSDeltaCmd(pos, to_append, None, nbytes))
+        pos += nbytes
 
   def __enter__(self):
-    #print('__enter__', self, self.kind)
     if self.kind==6: # ofs-delta
       self._parse_ods_delta()
       self.return_to_pos = self.f.tell()
@@ -226,7 +215,6 @@ class _ObjReader:
       return self.decompressed_stream
   
   def __exit__(self, type, value, traceback):
-    #print('__exit__', self, self.kind, hasattr(self,'decompressed_stream'))
     if self.kind==6:
       del self.base_obj_pos
       self.base_obj_reader.__exit__(None, None, None)
@@ -236,9 +224,6 @@ class _ObjReader:
       self.f.seek(self.return_to_pos)
     else:
       pass
-    #print(self, self.kind, hasattr(self, 'base_obj_stream'), hasattr(self, 'base_obj_reader'), hasattr(self, 'decompressed_stream'))
-    #assert gc.mem_free()>80000
-    #if gc.mem_free()<80000: help(self)
   
   # DecompIO doesn't support seek, so fake it
   # every seek either moves forward or reloads the stream
@@ -258,35 +243,28 @@ class _ObjReader:
     while self.base_obj_pos < pos:
       toss = self.base_obj_reader.decompressed_stream.read(min(512,pos-self.base_obj_pos))
       self.base_obj_pos += len(toss)
-    #print('self.base_obj_pos == pos',self.base_obj_pos, pos)
     assert self.base_obj_pos == pos
   
   def read(self, nbytes):
     ret = io.BytesIO()
     for cmd in self.cmds:
-      #print('self.pos', self.pos, cmd)
       if not nbytes: break
       if cmd.start+cmd.nbytes < self.pos: continue
       if cmd.append:
         to_append = cmd.append[self.pos-cmd.start:min(nbytes,cmd.nbytes)]
-        #print('append',to_append,len(to_append), nbytes,cmd.nbytes)
       else:
-        #print('cmd.base_start+self.pos-cmd.start',cmd.base_start+self.pos-cmd.start)
         self._base_obj_stream_seek(cmd.base_start+self.pos-cmd.start)
         to_append = self.base_obj_reader.decompressed_stream.read(min(nbytes,cmd.nbytes-(self.pos-cmd.start)))
         self.base_obj_pos += len(to_append)
-        #print('copy',to_append,len(to_append), nbytes,cmd.nbytes)
       ret.write(to_append)
       nbytes -= len(to_append)
       self.pos += len(to_append)
     ret = ret.getvalue()
-    #print('read', len(ret), ret)
     return ret
 
   def digest(self):
     kind = self.kind
     with self as f:
-      #print('cmd.base_start+self.pos-cmd.start','xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx')
       if kind==6:
         kind = self.base_obj_reader.kind
       h = hashlib.sha1()
@@ -294,21 +272,11 @@ class _ObjReader:
       elif kind==2: h.update(b'tree ')
       elif kind==3: h.update(b'blob ')
       else: raise Exception('unknown kind', kind)
-      #print('kind', kind, self.size)
       h.update(str(self.size).encode())
       h.update(b'\x00')
-      #xxx = b''
       while data := f.read(512):
-        #print('gotbytes', len(data))
         h.update(data)
-        #xxx += data
-    #assert gc.mem_free()>80000
     digest = h.digest()
-    #print('xxx', len(xxx), xxx)
-    #print('self.digest', kind, self.size, 'sig', binascii.hexlify(digest))
-    #with open('xxxxx.py', 'wb') as f:
-    #  f.write(xxx)
-    #assert not xxx.startswith(b'# This workflow will install Python dependencies')
     return digest
     
   
@@ -321,13 +289,10 @@ def _read_until(f, stop_byte):
 
     
 def _parse_pkt_file(git_dir, fn, db):
-  #print('parse_pkt_file', git_dir, fn)
   pkt_id = int(fn.split('.')[0])
-  #print('pkt_digest',pkt_digest)
   with open(f'{git_dir}/{fn}','rb') as f:
     assert f.read(4)==b'PACK'
     version = struct.unpack('!I', f.read(4))[0]
-    #print('git pack version:', version)
     del version
     cnt = struct.unpack('!I', f.read(4))[0]
     print('reading', cnt, 'objs from', fn)
@@ -336,33 +301,20 @@ def _parse_pkt_file(git_dir, fn, db):
       o = _ObjReader(f)
       kind = o.kind
       size = o.size
-      #print('kind:', kind, o.kind)
-      #print('size:', size)
-      #print('where', f.tell())
       assert kind!=0
       idx = struct.pack('QBQQQ', pkt_id, kind, f.tell(), size, fpos)
       sig = o.digest()
       db[sig] = idx
-      #db.flush()
-      #print('idx', f.tell(), binascii.hexlify(sig), fn, struct.unpack('BQQQ', idx[20:]))
-#      print('unused_data', len(dco.unused_data), dco.unused_data)
-#      print('unconsumed_tail', dco.unconsumed_tail)
-#      print('eof', dco.eof)
-      #print('where', f.tell())
-#      f.seek(f.tell()-len(dco.unused_data))
-    print('done at', f.tell(), 'remaining', len(f.read()))
     #TODO parse tail, which is hash of packet
+    #print('done at', f.tell(), 'remaining', len(f.read()))
 
 def _read_pkt_lines(x, git_dir):
-  #print('_read_pkt_lines')
   HEAD = None
   tfn = f'{git_dir}/tmp.pack'
   pack_size = 0
   with open(tfn,'wb') as f:
     while pkt_bytes := x.read(4):
-      #print('pkt_bytes', pkt_bytes)
       pkt_bytes = int(pkt_bytes,16)
-      #print('pkt_bytesi', pkt_bytes)
       pkt_bytes -= 4
       if pkt_bytes>0:
         buf = io.BytesIO()
@@ -372,7 +324,6 @@ def _read_pkt_lines(x, git_dir):
           while pkt_bytes>0:
             data = x.read(min(512,pkt_bytes))
             pkt_bytes -= len(data)
-            #print('pack', len(data), data)
             f.write(data)
             pack_size += len(data)
         else:
@@ -382,8 +333,6 @@ def _read_pkt_lines(x, git_dir):
             if not bits: break
             pkt_bytes -= len(bits)
             buf.write(bits)
-            #print('bits', pkt_bytes, bits)
-          #print('channel', channel, buf.getvalue())
           data = buf.getvalue()
           if data[40:46]==b' HEAD ':
             HEAD = data[:40]
@@ -393,15 +342,9 @@ def _read_pkt_lines(x, git_dir):
           else:
             print('UNK:', data)
   if pack_size:
-#    with open(tfn,'rb') as f:
-      #f.seek(-20, 2) #SEEK_END
-#      sig = f.read(20)
-      #assert f.read(1)==b''
     l = len([s for s in os.listdir(git_dir) if s.endswith('.pack')])
     fn = f'{l}.pack'
-    #print('tfn',tfn, f'{git_dir}/{fn}')
     
-    #print('pack_size',pack_size)
     os.rename(tfn, f'{git_dir}/{fn}')
     return HEAD, [fn]
   else:
@@ -486,7 +429,6 @@ def checkout(directory, rev='HEAD'):
       rev = db[b'HEAD']
     print('checking out', rev.decode())
     commit = _get_commit(git_dir, db, rev)
-    #print(commit)
     for mode, fn, digest in _walk_tree(git_dir, db, directory, commit.tree):
       #print('entry', repr(mode), int(mode), fn, binascii.hexlify(digest) if digest else None)
       if int(mode)==40000:
@@ -522,12 +464,10 @@ def status(directory, out=sys.stdout, rev='HEAD'):
 
 
 def _checkout_file(git_dir, db, fn, ref, write=True):
-  #print('_checkout_file',git_dir, db, fn, ref, write)
   if ref not in db:
     raise Exception(f'unknown ref for file:{fn} sig:{binascii.hexlify(ref)}')
   ref_data = db[ref]
   pkt_id, kind, pos, size, ostart = struct.unpack('QBQQQ', ref_data)
-  #print('kind', kind)
   assert kind in (3,6)
   h = hashlib.sha1()
   h.update(b'blob ')
@@ -537,7 +477,6 @@ def _checkout_file(git_dir, db, fn, ref, write=True):
     with open(fn,'rb') as f:
       while data:=f.read(1024):
         h.update(data)
-    #print('actual', binascii.hexlify(h.digest()), 'desired', binascii.hexlify(ref))
     status = 'M' if h.digest()!=ref else None
   except FileNotFoundError:
     status = 'D'
@@ -563,7 +502,6 @@ def _get_commit(git_dir, db, ref):
   fn = f'{git_dir}/{pkt_id}.pack'
   with open(fn, 'rb') as f:
     f.seek(pos)
-    #print('DecompIO3')
     s1 = DecompIO(f)
     tree, author = None, None
     while line:=s1.readline():
@@ -585,7 +523,6 @@ def _walk_tree(git_dir, db, directory, ref):
   with open(fn, 'rb') as f:
     f.seek(pos)
     next = []
-    #print('DecompIO4')
     s2 = DecompIO(f)
     to_yield = []
     while line:=_read_until(s2, b'\x00'):
