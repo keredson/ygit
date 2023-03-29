@@ -28,26 +28,81 @@ class DecompIO:
 
   def __init__(self, f):
     global _master_decompio
+    orig_f_pos = f.tell()
+    self._cache = None
+    self._phoenix(f)
+    try:
+      self._cache = None
+      print('ccccc',gc.collect(), gc.mem_free())
+      self._cache = io.BytesIO(_master_decompio.read())
+    except MemoryError:
+      print('ddddd',gc.collect(), gc.mem_free())
+      f.seek(orig_f_pos)
+      self._phoenix(f)
+      with open('__decompio_cache__','wb') as of:
+        while data := _master_decompio.read(512):
+          of.write(data)
+      self._cache = open('__decompio_cache__','rb')
+      
+  def _phoenix(self, f):
     gc.collect() # wtf - commenting out this line will cause OOM
-    print('mem_free before dealloc', id(_master_decompio), gc.mem_free()) #wtf2 - same
+    global _master_decompio
+    print('mem_free before dealloc', gc.mem_free()) #wtf2 - same
+    before = gc.mem_free()
+    self._cache = None
     del _master_decompio
     gc.collect()
-    #print('mem_free after dealloc', gc.mem_free())
+    while False and gc.mem_free() - before < 10000:
+      print('waiting for gc...', gc.mem_free())
+      time.sleep(1)
+      gc.collect()
+    print('mem_free after dealloc', gc.mem_free())
     _master_decompio = _DecompIO(f)
     self._id = id(_master_decompio)
-    #print('mem_free after alloc', self._id, gc.mem_free())
+    print('mem_free after alloc', self._id, gc.mem_free())
 
   def read(self, nbytes):
+    if self._cache: return self._cache.read(nbytes)
     global _master_decompio
     #print('read', self._id, 'actual', id(_master_decompio), nbytes)
     assert self._id == id(_master_decompio)
     return _master_decompio.read(nbytes)
     
   def readline(self):
+    if self._cache: return self._cache.readline()
     global _master_decompio
     assert self._id == id(_master_decompio)
     return _master_decompio.readline()
+
+  def seek(self, pos):
+    if self._cache: return self._cache.seek(pos)
     
+#  def __del__(self):
+#    if self._cache:
+#      self._cache.close()
+#      os.remove('__decompio_cache__')
+    
+
+  # DecompIO doesn't support seek, so fake it
+  # every seek either moves forward or reloads the stream
+  # fortunately pack files *mostly* copy from increasing offsets, so the performance isn't horrible
+  # alt: we could temp write the base object to disk, but that has other concerns.  (what if not enough space? how many writes will wear out the flash?)
+  def _base_obj_stream_seek(self, pos):
+    if self.base_obj_pos is None:
+      self.base_obj_reader.__enter__()
+      self.base_obj_pos = 0
+    if pos < self.base_obj_pos:
+      # reset
+      self.base_obj_reader.__exit__(None, None, None)
+      self.f.seek(self.base_object_offset)
+      self.base_obj_reader = _ObjReader(self.f)
+      self.base_obj_reader.__enter__()
+      self.base_obj_pos = 0
+    while self.base_obj_pos < pos:
+      toss = self.base_obj_reader.decompressed_stream.read(min(512,pos-self.base_obj_pos))
+      self.base_obj_pos += len(toss)
+    assert self.base_obj_pos == pos
+
 
 try:
   from btree import open as btree
@@ -224,27 +279,7 @@ class _ObjReader:
       self.f.seek(self.return_to_pos)
     else:
       pass
-  
-  # DecompIO doesn't support seek, so fake it
-  # every seek either moves forward or reloads the stream
-  # fortunately pack files *mostly* copy from increasing offsets, so the performance isn't horrible
-  # alt: we could temp write the base object to disk, but that has other concerns.  (what if not enough space? how many writes will wear out the flash?)
-  def _base_obj_stream_seek(self, pos):
-    if self.base_obj_pos is None:
-      self.base_obj_reader.__enter__()
-      self.base_obj_pos = 0
-    if pos < self.base_obj_pos:
-      # reset
-      self.base_obj_reader.__exit__(None, None, None)
-      self.f.seek(self.base_object_offset)
-      self.base_obj_reader = _ObjReader(self.f)
-      self.base_obj_reader.__enter__()
-      self.base_obj_pos = 0
-    while self.base_obj_pos < pos:
-      toss = self.base_obj_reader.decompressed_stream.read(min(512,pos-self.base_obj_pos))
-      self.base_obj_pos += len(toss)
-    assert self.base_obj_pos == pos
-  
+    
   def read(self, nbytes):
     ret = io.BytesIO()
     for cmd in self.cmds:
@@ -253,9 +288,11 @@ class _ObjReader:
       if cmd.append:
         to_append = cmd.append[self.pos-cmd.start:min(nbytes,cmd.nbytes)]
       else:
-        self._base_obj_stream_seek(cmd.base_start+self.pos-cmd.start)
+        if self.base_obj_pos is None:
+          self.base_obj_reader.__enter__()
+          self.base_obj_pos = 0
+        self.base_obj_reader.decompressed_stream.seek(cmd.base_start+self.pos-cmd.start)
         to_append = self.base_obj_reader.decompressed_stream.read(min(nbytes,cmd.nbytes-(self.pos-cmd.start)))
-        self.base_obj_pos += len(to_append)
       ret.write(to_append)
       nbytes -= len(to_append)
       self.pos += len(to_append)
@@ -315,6 +352,7 @@ def _read_pkt_lines(x, git_dir):
   with open(tfn,'wb') as f:
     while pkt_bytes := x.read(4):
       pkt_bytes = int(pkt_bytes,16)
+      print('pkt_bytes',pkt_bytes)
       pkt_bytes -= 4
       if pkt_bytes>0:
         buf = io.BytesIO()
