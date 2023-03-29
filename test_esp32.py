@@ -59,11 +59,11 @@ def test_checkout_status():
   pyb.enter_raw_repl()
   pyb.exec_('import ygit, io', stream_output=True)
   pyb.exec_("ygit.init('https://github.com/turfptax/ugit_test.git','ugit_test')", stream_output=True)
-  pyb.exec_("ygit.fetch('ugit_test', rev='7e5c62596935f96518a931f97ded52b6e8b01594')", stream_output=True)
-  pyb.exec_("ygit.checkout('ugit_test', rev='7e5c62596935f96518a931f97ded52b6e8b01594')", stream_output=True)
-  pyb.exec_("ygit.fetch('ugit_test', rev='cde9c4e1c7a178bb81ccaefb74824cc01e3638e7')", stream_output=True)
+  pyb.exec_("ygit.fetch('ugit_test', ref='7e5c62596935f96518a931f97ded52b6e8b01594')", stream_output=True)
+  pyb.exec_("ygit.checkout('ugit_test', ref='7e5c62596935f96518a931f97ded52b6e8b01594')", stream_output=True)
+  pyb.exec_("ygit.fetch('ugit_test', ref='cde9c4e1c7a178bb81ccaefb74824cc01e3638e7')", stream_output=True)
   pyb.exec_('out = io.StringIO()', stream_output=True)
-  pyb.exec_("ygit.status('ugit_test', rev='cde9c4e1c7a178bb81ccaefb74824cc01e3638e7', out=out)", stream_output=True)
+  pyb.exec_("ygit.status('ugit_test', ref='cde9c4e1c7a178bb81ccaefb74824cc01e3638e7', out=out)", stream_output=True)
   out = pyb.exec_('print(out.getvalue())')
   pyb.exit_raw_repl()
   assert out==b'A ugit_test/Folder\r\nA ugit_test/Folder\r\nD /README.md\r\nD /boot.py\r\nA ugit_test/Folder/SubFolder\r\nA ugit_test/Folder/SubFolder\r\nD /Folder/in_second.py\r\nD /Folder/SubFolder/third_layer.py\r\n\r\n'
@@ -71,7 +71,7 @@ def test_checkout_status():
 
 
 # this repo will fill up the flash, then OSError: 28
-# ygit.clone('https://github.com/gitpython-developers/GitPython.git','GitPython', rev='f25333525425ee1497366fd300a60127aa652d79')
+# ygit.clone('https://github.com/gitpython-developers/GitPython.git','GitPython', ref='f25333525425ee1497366fd300a60127aa652d79')
 
 
 if __name__=='__main__':

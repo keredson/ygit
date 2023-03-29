@@ -29,15 +29,21 @@ These are incremental operations.  It will only download git objects you don't a
 ## API
 ```python
 ygit.init(repo, directory, cone=None)
-ygit.clone(repo, directory, shallow=True, cone=None, quiet=False, rev='HEAD')
-ygit.checkout(directory, rev='HEAD')
-ygit.pull(directory, shallow=True, quiet=False, rev='HEAD')
-ygit.fetch(directory, shallow=True, quiet=False, rev='HEAD')
-ygit.status(directory, rev='HEAD')
+ygit.clone(repo, directory, shallow=True, cone=None, quiet=False, ref='HEAD')
+ygit.checkout(directory, ref='HEAD')
+ygit.pull(directory, shallow=True, quiet=False, ref='HEAD')
+ygit.fetch(directory, shallow=True, quiet=False, ref='HEAD')
+ygit.status(directory, ref='HEAD')
 ```
+A `ref` is one of: 
+- `HEAD`
+- a commit id (40 character hex string)
+- a branch name
+- a tag
+
 ### Shallow Cloning
 By default clones are [shallow](https://github.blog/2020-12-21-get-up-to-speed-with-partial-clone-and-shallow-clone/) to
-save space.  If you try to checkout an unknown rev, `ygit` will fetch a new packfile from the original server.
+save space.  If you try to checkout an unknown ref, `ygit` will fetch a new packfile from the original server.
 
 
 ### Subdirectory Cloning

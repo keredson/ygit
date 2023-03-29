@@ -441,24 +441,22 @@ def init(repo, directory, cone=None):
       db[b'cone'] = cone.encode()
 
 
-def clone(repo, directory, shallow=True, cone=None, quiet=False, rev='HEAD'):
-  if isinstance(rev,str):
-    rev = rev.encode()
-  print(f'cloning {repo} into {directory}')
+def clone(repo, directory, shallow=True, cone=None, quiet=False, ref='HEAD'):
+  if isinstance(ref,str):
+    ref = ref.encode()
+  print(f'cloning {repo} into {directory} @ {ref.decode()}')
   init(repo, directory, cone=cone)
-  pull(directory, quiet=quiet, shallow=shallow, rev=rev)
+  pull(directory, quiet=quiet, shallow=shallow, ref=ref)
 
 
-def checkout(directory, rev='HEAD'):
-  if isinstance(rev,str):
-    rev = rev.encode()
+def checkout(directory, ref='HEAD'):
   git_dir = f'{directory}/.ygit'
-  if rev==b'HEAD':
-    with DB(f'{git_dir}/refs') as db:
-      rev =  binascii.hexlify(db[b'HEAD'])
+  commit = _ref_to_commit(git_dir, ref)
+  if not commit:
+    raise Exception(f'unknown ref: {ref}')
   with DB(f'{git_dir}/idx') as db:
-    print('checking out', rev.decode())
-    commit = _get_commit(git_dir, db, rev)
+    print('checking out', commit.decode())
+    commit = _get_commit(git_dir, db, commit)
     for mode, fn, digest in _walk_tree(git_dir, db, directory, commit.tree):
       #print('entry', repr(mode), int(mode), fn, binascii.hexlify(digest) if digest else None)
       if int(mode)==40000:
@@ -470,17 +468,15 @@ def checkout(directory, rev='HEAD'):
         _checkout_file(git_dir, db, fn, digest)
 
 
-def status(directory, out=sys.stdout, rev='HEAD'):
-  if isinstance(rev,str):
-    rev = rev.encode()
+def status(directory, out=sys.stdout, ref='HEAD'):
   changes = False
   git_dir = f'{directory}/.ygit'
-  if rev==b'HEAD':
-    with DB(f'{git_dir}/refs') as db:
-      rev = binascii.hexlify(db[b'HEAD'])
+  commit = _ref_to_commit(git_dir, ref)
+  if not commit:
+    raise Exception(f'unknown ref: {ref}')
   with DB(f'{git_dir}/idx') as db:
-    print('status of', rev.decode())
-    commit = _get_commit(git_dir, db, rev)
+    print('status of', commit.decode())
+    commit = _get_commit(git_dir, db, commit)
     for mode, fn, digest in _walk_tree(git_dir, db, directory, commit.tree):
       if int(mode)==40000:
         if not _isdir(fn):
@@ -526,11 +522,11 @@ def _checkout_file(git_dir, db, fn, ref, write=True):
   return status
 
 
-def _get_commit(git_dir, db, ref):
-  if binascii.unhexlify(ref) not in db:
-    _fetch(git_dir, db, True, False, ref)
-  data = db[binascii.unhexlify(ref)]
-  pkt_id, kind, pos, size, ostart = struct.unpack('QBQQQ', data)
+def _get_commit(git_dir, db, commit):
+  if binascii.unhexlify(commit) not in db:
+    _fetch(git_dir, db, True, False, commit)
+  idx = db[binascii.unhexlify(commit)]
+  pkt_id, kind, pos, size, ostart = struct.unpack('QBQQQ', idx)
   assert kind==1
   fn = f'{git_dir}/{pkt_id}.pack'
   with open(fn, 'rb') as f:
@@ -574,18 +570,28 @@ def _walk_tree(git_dir, db, directory, ref):
       yield from _walk_tree(git_dir, db, fn, digest)
 
 
-def pull(directory, shallow=True, quiet=False, rev='HEAD'):
-  if fetch(directory, quiet=quiet, shallow=shallow, rev=rev):
-    checkout(directory, rev=rev)
+def pull(directory, shallow=True, quiet=False, ref='HEAD'):
+  if fetch(directory, quiet=quiet, shallow=shallow, ref=ref):
+    checkout(directory, ref=ref)
+
+
+def _ref_to_commit(git_dir, ref):
+  if isinstance(ref,str):
+    ref = ref.encode()
+  if len(ref)==40:
+    return ref
+  with DB(f'{git_dir}/refs') as db:
+    commit = binascii.hexlify(db[ref]) if ref in db else None
+  return commit
 
   
-def fetch(directory, shallow=True, quiet=False, rev='HEAD'):
-  if isinstance(rev,str):
-    rev = rev.encode()
+def fetch(directory, shallow=True, quiet=False, ref='HEAD'):
+  if isinstance(ref,str):
+    ref = ref.encode()
   git_dir = f'{directory}/.ygit'
   with DB(f'{git_dir}/config') as db:
     repo = db[b'repo'].decode()
-  print(f'fetching: {repo} @ {rev.decode()}')
+  print(f'fetching: {repo} @ {ref.decode()}')
 
   s,x = _request(repo)
   _read_headers(x)
@@ -599,9 +605,9 @@ def fetch(directory, shallow=True, quiet=False, rev='HEAD'):
       aref = aref.strip()
       db[aref] =binascii.unhexlify(arev)
     HEAD = binascii.hexlify(db[b'HEAD']) if b'HEAD' in db else None # empty repo
-    if rev==b'HEAD':
-      rev = HEAD
   s.close()
+  
+  commit = _ref_to_commit(git_dir, ref)
 
 #  if requested_rev==b'HEAD':
 #    s,x = _request(repo, data=b'0014command=ls-refs\n0014agent=git/2.37.20016object-format=sha100010009peel\n000csymrefs\n000bunborn\n0014ref-prefix HEAD\n001bref-prefix refs/heads/\n0000')
@@ -611,21 +617,22 @@ def fetch(directory, shallow=True, quiet=False, rev='HEAD'):
 #    print('ORIG_HEAD', ORIG_HEAD, requested_rev, rev)
 
   with DB(f'{git_dir}/idx') as db:
-    return _fetch(git_dir, db, shallow, quiet, rev)
+    return _fetch(git_dir, db, shallow, quiet, commit)
 
-def _fetch(git_dir, db, shallow, quiet, rev):
-  assert rev is None or isinstance(rev, bytes) and len(rev)==40 # only full hashes here
+def _fetch(git_dir, db, shallow, quiet, commit):
+  print('_fetch', git_dir, db, shallow, quiet, commit)
+  assert commit is None or isinstance(commit, bytes) and len(commit)==40 # only full hashes here
 
   with DB(f'{git_dir}/config') as config_db:
     repo = config_db[b'repo'].decode()
 
-  if rev:
-    print(f'HEAD=>{rev.decode()}')
+  if commit:
+    print(f'fetching commit: {commit.decode()}')
   else:
     print('fetched an empty repo')
     return False
 
-  if binascii.unhexlify(rev) in db:
+  if binascii.unhexlify(commit) in db:
     print('up to date!')
     return False
 
@@ -635,7 +642,7 @@ def _fetch(git_dir, db, shallow, quiet, rev):
   if quiet: cmd.write(b'000finclude-tag')
   if shallow: cmd.write(b'000cdeepen 1')
   if False: cmd.write(b'0014filter blob:none') # blobless clone
-  cmd.write(f'0032want {rev.decode()}\n'.encode())
+  cmd.write(f'0032want {commit.decode()}\n'.encode())
   for k in db.keys():
     if k==b'HEAD': continue
     have = f'0032have {binascii.hexlify(k).decode()}\n'
