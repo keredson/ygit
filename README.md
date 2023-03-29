@@ -49,7 +49,7 @@ This was inspired by [ugit](https://github.com/turfptax/ugit), which didn't work
 
 ## Roadmap
 - HTTP authentication for non-public projects.
-- `clone` is currently unfinished.
+- `cone` is currently unfinished.
 - Support branches / tags.
 
 ## Tests
