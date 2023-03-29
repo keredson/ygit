@@ -33,7 +33,7 @@ def test_clone():
   with tempfile.TemporaryDirectory() as td:
     ygit.clone('http://localhost:8889/'+os.path.basename(d),td)
     assert sorted(os.listdir(td)) == ['.ygit', 'test.txt']
-    assert sorted([s for s in os.listdir(os.path.join(td,'.ygit')) if not s.endswith('.pack')]) == ['config', 'idx']
+    assert sorted([s for s in os.listdir(os.path.join(td,'.ygit')) if not s.endswith('.pack')]) == ['config', 'idx', 'refs']
     assert len([s for s in os.listdir(os.path.join(td,'.ygit')) if s.endswith('.pack')]) == 1
     with open(os.path.join(td,'test.txt')) as f:
       assert f.read()=='woot!'
@@ -46,7 +46,7 @@ def test_clone_empty_repo():
     assert os.path.isdir(os.path.join(td,'.ygit'))
     assert os.path.isfile(os.path.join(td,'.ygit','config'))
     assert os.path.isfile(os.path.join(td,'.ygit','idx'))
-    assert sorted(os.listdir(os.path.join(td,'.ygit'))) == ['config', 'idx']
+    assert sorted(os.listdir(os.path.join(td,'.ygit'))) == ['config', 'idx', 'refs']
 
     
 def test_fetch_no_update():

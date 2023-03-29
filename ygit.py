@@ -96,7 +96,7 @@ class DB:
     return self._db[key]
 
   def get(self, key, default=None):
-    return self._db.get(key, default=default)
+    return self._db.get(key, default)
 
   def __delitem__(self, key):
     del self._db[key]
@@ -351,35 +351,64 @@ def _read_pkt_lines(x, git_dir):
     os.remove(tfn)
     return HEAD, []
 
+def _iter_pkt_lines(x, f=None):
+  while pkt_bytes := x.read(4):
+    pkt_bytes = int(pkt_bytes,16)
+    pkt_bytes -= 4
+    if pkt_bytes>0:
+      buf = io.BytesIO()
+      channel = x.read(1)
+      pkt_bytes -= 1
+      if channel==b'\x01':
+        while pkt_bytes>0:
+          data = x.read(min(512,pkt_bytes))
+          pkt_bytes -= len(data)
+          if f: f.write(data)
+      else:
+        buf.write(channel)
+        while pkt_bytes>0:
+          bits = x.read(min(512,pkt_bytes))
+          if not bits: break
+          pkt_bytes -= len(bits)
+          buf.write(bits)
+        data = buf.getvalue()
+        yield data
 
-def _post(repo, data=None):
+
+def _request(repo, data=None):
   proto, _, host, path = repo.split("/", 3)
   port = 443 if proto=='https:' else 80
   if ':' in host:
     host, port = host.split(':',1)
     port = int(port)
+  method = 'POST' if data else 'GET'
+  endpoint = 'git-upload-pack' if method=='POST' else 'info/refs?service=git-upload-pack'
   s = socket.socket()
   s.connect((host, port))
   if proto=='https:':
     s = ssl.wrap_socket(s)
   x = s.makefile("rb") if hasattr(s,'makefile') else s
   send = s.send if hasattr(s,'send') else s.write
-  req = f'POST /{path}/git-upload-pack HTTP/1.0\r\n'
+  req = f'{method} /{path}/{endpoint} HTTP/1.0\r\n'
+  print('req', req)
   send(req.encode())
   headers = {
     'Host': host,
-    'User-Agent': 'git/2.37.2',
-    'Accept-Encoding': 'deflate, gzip, br, zstd',
-    'Content-Type': 'application/x-git-upload-pack-request',
-    'Accept': 'application/x-git-upload-pack-result',
-    'Git-Protocol': 'version=2',
-    'Content-Length': str(len(data)),
+    'User-Agent': 'ygit/0.0.1',
+    'Accept': '*/*',
   }
+  if data:
+    headers['Content-Type'] = 'application/x-git-upload-pack-request'
+    headers['Accept'] = 'application/x-git-upload-pack-result'
+    headers['Accept-Encoding'] = 'deflate, gzip, br, zstd'
+    headers['Git-Protocol'] = 'version=2'
+    headers['Content-Length'] = str(len(data))
   for k,v in headers.items():
     send(f'{k}: {v}\r\n'.encode())
   send(b'\r\n')
   if data:
     send(data)
+    print(data)
   return s,x
 
 
@@ -424,9 +453,10 @@ def checkout(directory, rev='HEAD'):
   if isinstance(rev,str):
     rev = rev.encode()
   git_dir = f'{directory}/.ygit'
+  if rev==b'HEAD':
+    with DB(f'{git_dir}/refs') as db:
+      rev =  binascii.hexlify(db[b'HEAD'])
   with DB(f'{git_dir}/idx') as db:
-    if rev==b'HEAD':
-      rev = db[b'HEAD']
     print('checking out', rev.decode())
     commit = _get_commit(git_dir, db, rev)
     for mode, fn, digest in _walk_tree(git_dir, db, directory, commit.tree):
@@ -445,9 +475,10 @@ def status(directory, out=sys.stdout, rev='HEAD'):
     rev = rev.encode()
   changes = False
   git_dir = f'{directory}/.ygit'
+  if rev==b'HEAD':
+    with DB(f'{git_dir}/refs') as db:
+      rev = binascii.hexlify(db[b'HEAD'])
   with DB(f'{git_dir}/idx') as db:
-    if rev==b'HEAD':
-      rev = db[b'HEAD']
     print('status of', rev.decode())
     commit = _get_commit(git_dir, db, rev)
     for mode, fn, digest in _walk_tree(git_dir, db, directory, commit.tree):
@@ -556,16 +587,34 @@ def fetch(directory, shallow=True, quiet=False, rev='HEAD'):
     repo = db[b'repo'].decode()
   print(f'fetching: {repo} @ {rev.decode()}')
 
-  if rev==b'HEAD':
-    s,x = _post(repo, b'0014command=ls-refs\n0014agent=git/2.37.20016object-format=sha100010009peel\n000csymrefs\n000bunborn\n0014ref-prefix HEAD\n001bref-prefix refs/heads/\n0000')
-    _read_headers(x)
-    rev = HEAD = _read_pkt_lines(x, git_dir)[0]
-    s.close()
+  s,x = _request(repo)
+  _read_headers(x)
+  capabilities = None
+  with DB(f'{git_dir}/refs') as db:
+    for packline in _iter_pkt_lines(x):
+      if packline.startswith(b'#'): continue
+      if b'\x00' in packline:
+        packline, capabilities = packline.split(b'\x00', 1)
+      arev, aref = packline.split(b' ', 1)
+      aref = aref.strip()
+      db[aref] =binascii.unhexlify(arev)
+    HEAD = binascii.hexlify(db[b'HEAD']) if b'HEAD' in db else None # empty repo
+    if rev==b'HEAD':
+      rev = HEAD
+  s.close()
+
+#  if requested_rev==b'HEAD':
+#    s,x = _request(repo, data=b'0014command=ls-refs\n0014agent=git/2.37.20016object-format=sha100010009peel\n000csymrefs\n000bunborn\n0014ref-prefix HEAD\n001bref-prefix refs/heads/\n0000')
+#    _read_headers(x)
+#    ORIG_HEAD = _read_pkt_lines(x, git_dir)[0]
+#    s.close()
+#    print('ORIG_HEAD', ORIG_HEAD, requested_rev, rev)
 
   with DB(f'{git_dir}/idx') as db:
     return _fetch(git_dir, db, shallow, quiet, rev)
 
 def _fetch(git_dir, db, shallow, quiet, rev):
+  assert rev is None or isinstance(rev, bytes) and len(rev)==40 # only full hashes here
 
   with DB(f'{git_dir}/config') as config_db:
     repo = config_db[b'repo'].decode()
@@ -583,6 +632,7 @@ def _fetch(git_dir, db, shallow, quiet, rev):
   cmd = io.BytesIO()
   cmd.write(b'0011command=fetch0014agent=git/2.37.20016object-format=sha10001000dofs-delta')
   if quiet: cmd.write(b'000fno-progress')
+  if quiet: cmd.write(b'000finclude-tag')
   if shallow: cmd.write(b'000cdeepen 1')
   if False: cmd.write(b'0014filter blob:none') # blobless clone
   cmd.write(f'0032want {rev.decode()}\n'.encode())
@@ -592,9 +642,8 @@ def _fetch(git_dir, db, shallow, quiet, rev):
     print(repr(have))
     cmd.write(have.encode())
   cmd.write(b'0009done\n0000')
-  s,x = _post(repo, cmd.getvalue())
+  s,x = _request(repo, data=cmd.getvalue())
   _read_headers(x)
-  db[b'HEAD'] = rev
   db.flush()
   for fn in _read_pkt_lines(x, git_dir)[1]:
     _parse_pkt_file(git_dir, fn, db)

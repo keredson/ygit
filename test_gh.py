@@ -30,16 +30,16 @@ def test_big_clone():
 def test_checkout_older_history_and_update():
   with tempfile.TemporaryDirectory() as td:
     ygit.clone('https://github.com/turfptax/ugit_test.git',td, rev='7e5c62596935f96518a931f97ded52b6e8b01594')
-    assert sorted(os.listdir(os.path.join(td,'.ygit'))) == ['1.pack', 'config', 'idx']
+    assert sorted(os.listdir(os.path.join(td,'.ygit'))) == ['1.pack', 'config', 'idx', 'refs']
     assert sorted(os.listdir(os.path.join(td))) == ['.ygit', 'ugit_boot.py']
     # 2fd2d73227f2101770fae925ecc062b6ae4590ff is unknown because we did a shallow copy
     # this will perform another fetch to backfill missing objects
     ygit.checkout(td, rev='2fd2d73227f2101770fae925ecc062b6ae4590ff')
-    assert sorted(os.listdir(os.path.join(td,'.ygit'))) == ['1.pack', '2.pack', 'config', 'idx']
+    assert sorted(os.listdir(os.path.join(td,'.ygit'))) == ['1.pack', '2.pack', 'config', 'idx', 'refs']
     assert sorted(os.listdir(os.path.join(td))) == ['.ygit', 'InMainDir', 'README.md', 'ugit_boot.py']
     # ditto
     ygit.checkout(td, rev='cde9c4e1c7a178bb81ccaefb74824cc01e3638e7')
-    assert sorted(os.listdir(os.path.join(td,'.ygit'))) == ['1.pack', '2.pack', '3.pack', 'config', 'idx']
+    assert sorted(os.listdir(os.path.join(td,'.ygit'))) == ['1.pack', '2.pack', '3.pack', 'config', 'idx', 'refs']
     # InMainDir and ugit_boot.py shouldn't be here, but i haven't implemented deleting files yet
     assert sorted(os.listdir(os.path.join(td))) == ['.ygit', 'Folder', 'InMainDir', 'README.md', 'boot.py', 'ugit_boot.py']
     
