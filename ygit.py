@@ -37,17 +37,15 @@ class DecompIO:
     before = gc.mem_free()
     self._orig_f.seek(self._orig_f_pos)
     gc.collect() # wtf - commenting out this line will cause OOM
-#    print('mem_free before dealloc', gc.mem_free()) #wtf2 - same
-    print('%', end='') #wtf2 - same
+    os.listdir()
     del _master_decompio
+    gc.collect()
     _master_decompio = _DecompIO(self._orig_f)
     self._id = id(_master_decompio)
     self._pos = 0
-#    print('mem_free after alloc', self._id, gc.mem_free())
 
   def read(self, nbytes):
     global _master_decompio
-    #print('read', self._id, 'actual', id(_master_decompio), nbytes)
     assert self._id == id(_master_decompio)
     data = _master_decompio.read(nbytes)
     self._pos += len(data)
@@ -68,7 +66,6 @@ class DecompIO:
     while self._pos < pos:
       toss = _master_decompio.read(min(512,pos-self._pos))
       self._pos += len(toss)
-#    print('self._pos, pos',self._pos, pos)
     assert self._pos == pos
     
     
@@ -340,6 +337,7 @@ def _parse_pkt_file(git_dir, fn, db):
       idx = struct.pack('QBQQQ', pkt_id, kind, f.tell(), size, fpos)
       sig = o.digest()
       db[sig] = idx
+    print()
     #TODO parse tail, which is hash of packet
     #print('done at', f.tell(), 'remaining', len(f.read()))
 
@@ -427,7 +425,6 @@ def _request(repo, data=None):
   x = s.makefile("rb") if hasattr(s,'makefile') else s
   send = s.send if hasattr(s,'send') else s.write
   req = f'{method} /{path}/{endpoint} HTTP/1.0\r\n'
-  print('req', req)
   send(req.encode())
   headers = {
     'Host': host,
@@ -445,7 +442,6 @@ def _request(repo, data=None):
   send(b'\r\n')
   if data:
     send(data)
-    print(data)
   return s,x
 
 
