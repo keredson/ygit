@@ -1,4 +1,4 @@
-import os, tempfile, zlib, io, socket
+import os, tempfile, zlib, io, socket, hashlib
 
 import ampy.files
 import ampy.pyboard
@@ -14,7 +14,6 @@ def init_board():
   global pyb, initted
   if not pyb:
     pyb = ampy.pyboard.Pyboard('/dev/ttyUSB0', baudrate=115200)
-  print('clearing esp32...')
   board_files = ampy.files.Files(pyb)
   existing_files = board_files.ls(long_format=False)
   for fn in existing_files:
@@ -25,12 +24,41 @@ def init_board():
     except ampy.pyboard.PyboardError:
       board_files.rmdir(fn)
   if initted: return pyb
-  print('copying ygit...')
+  if check_ygit_file(pyb):
+    copy_ygit_file(pyb, board_files)
   initted = True
+  return pyb  
+
+
+def check_ygit_file(pyb):
+  pyb.enter_raw_repl()
+  try:
+    h = hashlib.sha1()
+    with open('ygit.py','rb') as f:
+      h.update(f.read())
+    sig = h.hexdigest()
+    cmd = '''import hashlib, binascii
+h = hashlib.sha1()
+f = open('ygit.py','rb')
+h.update(f.read())
+print(binascii.hexlify(h.digest()).decode())
+del h
+f.close()
+del f'''
+    board_sig = pyb.exec_(cmd).decode().strip()
+    print('ygit.py board/local sha1:', board_sig, sig)
+    return board_sig != sig
+  finally:
+    pyb.exit_raw_repl()
+  
+
+def copy_ygit_file(pyb, board_files):
+  print('copying ygit...')
   with open('ygit.py','rb') as f:
     board_files.put('ygit.py.gz', zlib.compress(f.read()))
   pyb.enter_raw_repl()
-  pyb.exec_('''import zlib, os
+  try:
+    pyb.exec_('''import zlib, os
 with open('ygit.py.gz','rb') as fin:
   with open('ygit.py','wb') as fout:
     s = zlib.DecompIO(fin)
@@ -39,9 +67,9 @@ with open('ygit.py.gz','rb') as fin:
 del s, fin, fout
 os.remove('ygit.py.gz')
 gc.collect()
-  ''', stream_output=True)
-  pyb.exit_raw_repl()
-  return pyb  
+    ''', stream_output=True)
+  finally:
+    pyb.exit_raw_repl()
 
 
 def test_gh():
