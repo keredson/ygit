@@ -58,7 +58,6 @@ This was inspired by [ugit](https://github.com/turfptax/ugit), which didn't work
 ## Roadmap
 - HTTP authentication for non-public projects.
 - `cone` is currently unfinished.
-- Support branches / tags.
 
 ## Tests
 - `pytest test_localhost.py` (run `nginx -c "$(pwd)/test_nginx.conf" -e stderr` in the background)

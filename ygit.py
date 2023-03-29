@@ -581,8 +581,10 @@ def _ref_to_commit(git_dir, ref):
   if len(ref)==40:
     return ref
   with DB(f'{git_dir}/refs') as db:
-    commit = binascii.hexlify(db[ref]) if ref in db else None
-  return commit
+    for possible_ref in [ref, b'refs/heads/'+ref, b'refs/tags/'+ref]:
+      if possible_ref in db:
+       return binascii.hexlify(db[possible_ref])
+  return None
 
   
 def fetch(directory, shallow=True, quiet=False, ref='HEAD'):

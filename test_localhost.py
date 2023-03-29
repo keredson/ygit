@@ -110,4 +110,27 @@ def test_status():
     ygit.status(td, out=out)
     assert 'M /test.txt\n'==out.getvalue()
     
+    
+def test_branch():
+  git, d = build_repo()
+  with open(os.path.join(d,'test.txt'),'w') as f:
+    f.write('v1')
+  git.add('test.txt')
+  git.commit('test.txt', message='v1')
+  git.checkout('-b', 'abranch')
+  with open(os.path.join(d,'branch.txt'),'w') as f:
+    f.write('abranch')
+  git.add('branch.txt')
+  git.commit('branch.txt', message='added a branch')
+  git.checkout('master')
+  with tempfile.TemporaryDirectory() as td:
+    ygit.clone('http://localhost:8889/'+os.path.basename(d),td)
+    with open(os.path.join(td,'test.txt')) as f:
+      assert f.read()=='v1'
+    assert not os.path.isfile(os.path.join(td,'branch.txt'))
+    ygit.checkout(td, ref='abranch')
+    with open(os.path.join(td,'branch.txt')) as f:
+      assert f.read()=='abranch'
+    
+
 
