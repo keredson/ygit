@@ -11,14 +11,47 @@ if not hasattr(gc, 'mem_free'):
   gc = FakeGC()
 
 try:
-  from zlib import DecompIO
+  from zlib import DecompIO as _DecompIO
 except ImportError:
-  def DecompIO(f):
+  def _DecompIO(f):
     bytes = f.read()
     dco = zlib.decompressobj()
     dec = dco.decompress(bytes)
     f.seek(f.tell()-len(dco.unused_data))
     return io.BytesIO(dec)
+
+#print('mem_free before _master_decompio', gc.mem_free())
+_master_decompio = _DecompIO(io.BytesIO(b'x\x9c\x03\x00\x00\x00\x00\x01'))
+#print('mem_free after _master_decompio', gc.mem_free())
+
+class DecompIO:
+
+  def __init__(self, f):
+    global _master_decompio
+    gc.collect()
+    #print('mem_free before dealloc', id(_master_decompio), gc.mem_free())
+    del _master_decompio
+    #assert '_master_decompio' not in globals()
+    gc.collect()
+    #print('mem_free before after dealloc', gc.mem_free())
+    _master_decompio = _DecompIO(f)
+    self._id = id(_master_decompio)
+    #print('mem_free dealloc alloc', self._id, gc.mem_free())
+
+  def read(self, nbytes):
+    global _master_decompio
+    #print('read', self._id, 'actual', id(_master_decompio), nbytes)
+    assert self._id == id(_master_decompio)
+    bytes = _master_decompio.read(nbytes)
+    return bytes
+    
+  def readline(self):
+    global _master_decompio
+    assert self._id == id(_master_decompio)
+    line = _master_decompio.readline()
+    #print('line',line)
+    return line
+    
 
 try:
   from btree import open as btree
@@ -140,9 +173,6 @@ class _ObjReader:
     self.kind, self.size = _read_kind_size(f)
     #print('osize:', self.size)
   
-  def __del__(self):
-    print('__del__')
-
   # https://git-scm.com/docs/pack-format#_deltified_representation
   def _parse_ods_delta(self):
     if hasattr(self, 'cmds'): return
@@ -151,7 +181,6 @@ class _ObjReader:
     self.base_object_offset = self.start - offset
     #print('obase_object_offset', self.base_object_offset, self.start, offset)
     #print('DecompIO')
-    gc.collect()
     try:
       dec_stream = DecompIO(self.f)
       self.cmds = []
@@ -184,30 +213,21 @@ class _ObjReader:
           pos += nbytes
     finally:
       del dec_stream
-      gc.collect()
-     
-    #print(self.cmds)
-    gc.collect()
 
   def __enter__(self):
     #print('__enter__', self, self.kind)
-    #print('before', gc.mem_free(), gc.collect() or 'after', gc.mem_free(), '@', self)
-    gc.collect()
-    try:
-      if self.kind==6: # ofs-delta
-        self._parse_ods_delta()
-        self.return_to_pos = self.f.tell()
-        self.pos = 0
-        self.f.seek(self.base_object_offset)
-        self.base_obj_reader = _ObjReader(self.f)
-        self.base_obj_pos = None
-        return self
-      else:
-        self.decompressed_stream = DecompIO(self.f)
-        return self.decompressed_stream
-    finally:
-      gc.collect()
-    
+    if self.kind==6: # ofs-delta
+      self._parse_ods_delta()
+      self.return_to_pos = self.f.tell()
+      self.pos = 0
+      self.f.seek(self.base_object_offset)
+      self.base_obj_reader = _ObjReader(self.f)
+      self.base_obj_pos = None
+      return self
+    else:
+      self.decompressed_stream = DecompIO(self.f)
+      return self.decompressed_stream
+  
   def __exit__(self, type, value, traceback):
     #print('__exit__', self, self.kind, hasattr(self,'decompressed_stream'))
     if self.kind==6:
@@ -217,12 +237,8 @@ class _ObjReader:
       if hasattr(self, 'decompressed_stream'):
         del self.decompressed_stream
       self.f.seek(self.return_to_pos)
-      gc.collect()
     else:
-      if hasattr(self, 'decompressed_stream'):
-        # if exception is thrown during __enter__, this won't exist and trying to delete it will hide/swallow the original
-        del self.decompressed_stream
-      gc.collect()
+      pass
     #print(self, self.kind, hasattr(self, 'base_obj_stream'), hasattr(self, 'base_obj_reader'), hasattr(self, 'decompressed_stream'))
     #assert gc.mem_free()>80000
     #if gc.mem_free()<80000: help(self)
@@ -233,21 +249,13 @@ class _ObjReader:
   # alt: we could temp write the base object to disk, but that has other concerns.  (what if not enough space? how many writes will wear out the flash?)
   def _base_obj_stream_seek(self, pos):
     if self.base_obj_pos is None:
-      gc.collect()
       self.base_obj_reader.__enter__()
       self.base_obj_pos = 0
     if pos < self.base_obj_pos:
       # reset
-      gc.collect()
-#      print('resetting', self.base_obj_reader.decompressed_stream)
-      try:
-        self.base_obj_reader.__exit__(None, None, None)
-      finally:
-        del self.base_obj_reader
-      gc.collect()
+      self.base_obj_reader.__exit__(None, None, None)
       self.f.seek(self.base_object_offset)
       self.base_obj_reader = _ObjReader(self.f)
-      gc.collect()
       self.base_obj_reader.__enter__()
       self.base_obj_pos = 0
     while self.base_obj_pos < pos:
@@ -297,9 +305,6 @@ class _ObjReader:
         #print('gotbytes', len(data))
         h.update(data)
         #xxx += data
-      del f
-      gc.collect()
-    gc.collect()
     #assert gc.mem_free()>80000
     digest = h.digest()
     #print('xxx', len(xxx), xxx)
@@ -520,8 +525,7 @@ def status(directory, out=sys.stdout, rev='HEAD'):
 
 
 def _checkout_file(git_dir, db, fn, ref, write=True):
-  print('_checkout_file',git_dir, db, fn, ref, write)
-  if not ref: return
+  #print('_checkout_file',git_dir, db, fn, ref, write)
   if ref not in db:
     raise Exception(f'unknown ref for file:{fn} sig:{binascii.hexlify(ref)}')
   ref_data = db[ref]
@@ -552,7 +556,6 @@ def _checkout_file(git_dir, db, fn, ref, write=True):
           while data:=fin.read(512):
             fout.write(data)
         del fin
-  gc.collect()
   return status
 
 
@@ -566,15 +569,12 @@ def _get_commit(git_dir, db, ref):
     #print('DecompIO3')
     s1 = DecompIO(f)
     tree, author = None, None
-    #print('dddddbefore', gc.mem_free(), gc.collect() or 'after', gc.mem_free())
     while line:=s1.readline():
       if line==b'\n': break
       k,v = line.split(b' ',1)
       if k==b'tree': tree = v.strip().decode()
       if k==b'author': author = v.strip().decode()
     del s1
-  gc.collect()
-  #print('bbbbbefore', gc.mem_free(), gc.collect() or 'after', gc.mem_free())
   return Commit(tree, author)
 
   
@@ -586,9 +586,6 @@ def _walk_tree(git_dir, db, directory, ref):
   assert kind==2
   fn = f'{git_dir}/{pkt_id}.pack'
   with open(fn, 'rb') as f:
-#    print('gc.mem_free()',gc.mem_free())
-#    gc.collect()
-#    print('gc.mem_free()',gc.mem_free())
     f.seek(pos)
     next = []
     #print('DecompIO4')
@@ -605,9 +602,6 @@ def _walk_tree(git_dir, db, directory, ref):
         print('ignoring submodule', fn,'(unsupported)')
       else:
         to_yield.append((mode, fn, digest))
-    del s2
-    gc.collect()
-    #print('aaaabefore', gc.mem_free(), gc.collect() or 'after', gc.mem_free())
     yield from to_yield
     for fn, digest in next:
       yield from _walk_tree(git_dir, db, fn, digest)
