@@ -496,6 +496,8 @@ def _checkout_file(git_dir, db, fn, ref, write=True):
 
 
 def _get_commit(git_dir, db, ref):
+  if binascii.unhexlify(ref) not in db:
+    _fetch(git_dir, db, True, False, ref)
   data = db[binascii.unhexlify(ref)]
   pkt_id, kind, pos, size, ostart = struct.unpack('QBQQQ', data)
   assert kind==1
@@ -561,35 +563,42 @@ def fetch(directory, shallow=True, quiet=False, rev='HEAD'):
     s.close()
 
   with DB(f'{git_dir}/idx') as db:
+    return _fetch(git_dir, db, shallow, quiet, rev)
 
-    if rev:
-      print(f'HEAD=>{rev.decode()}')
-    else:
-      print('fetched an empty repo')
-      return False
-  
-    if binascii.unhexlify(rev) in db:
-      print('up to date!')
-      return False
+def _fetch(git_dir, db, shallow, quiet, rev):
 
-    cmd = io.BytesIO()
-    cmd.write(b'0011command=fetch0014agent=git/2.37.20016object-format=sha10001000dofs-delta')
-    if quiet: cmd.write(b'000fno-progress')
-    if shallow: cmd.write(b'000cdeepen 1')
-    if False: cmd.write(b'0014filter blob:none') # blobless clone
-    cmd.write(f'0032want {rev.decode()}\n'.encode())
-    for k in db.keys():
-      if k==b'HEAD': continue
-      have = f'0032have {binascii.hexlify(k).decode()}\n'
-      print(repr(have))
-      cmd.write(have.encode())
-    cmd.write(b'0009done\n0000')
-    s,x = _post(repo, cmd.getvalue())
-    _read_headers(x)
-    db[b'HEAD'] = rev
-    db.flush()
-    for fn in _read_pkt_lines(x, git_dir)[1]:
-      _parse_pkt_file(git_dir, fn, db)
+  with DB(f'{git_dir}/config') as config_db:
+    repo = config_db[b'repo'].decode()
+
+  if rev:
+    print(f'HEAD=>{rev.decode()}')
+  else:
+    print('fetched an empty repo')
+    return False
+
+  if binascii.unhexlify(rev) in db:
+    print('up to date!')
+    return False
+
+  cmd = io.BytesIO()
+  cmd.write(b'0011command=fetch0014agent=git/2.37.20016object-format=sha10001000dofs-delta')
+  if quiet: cmd.write(b'000fno-progress')
+  if shallow: cmd.write(b'000cdeepen 1')
+  if False: cmd.write(b'0014filter blob:none') # blobless clone
+  cmd.write(f'0032want {rev.decode()}\n'.encode())
+  for k in db.keys():
+    if k==b'HEAD': continue
+    have = f'0032have {binascii.hexlify(k).decode()}\n'
+    print(repr(have))
+    cmd.write(have.encode())
+  cmd.write(b'0009done\n0000')
+  s,x = _post(repo, cmd.getvalue())
+  _read_headers(x)
+  db[b'HEAD'] = rev
+  db.flush()
+  for fn in _read_pkt_lines(x, git_dir)[1]:
+    _parse_pkt_file(git_dir, fn, db)
+
   s.close()
   return True
 

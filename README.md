@@ -36,7 +36,9 @@ ygit.fetch(directory, shallow=True, quiet=False, rev='HEAD')
 ygit.status(directory, rev='HEAD')
 ```
 ### Shallow Cloning
-By default clones are [shallow](https://github.blog/2020-12-21-get-up-to-speed-with-partial-clone-and-shallow-clone/) to save space.
+By default clones are [shallow](https://github.blog/2020-12-21-get-up-to-speed-with-partial-clone-and-shallow-clone/) to
+save space.  If you try to checkout an unknown rev, `ygit` will fetch a new packfile from the original server.
+
 
 ### Subdirectory Cloning
 Usually I don't want to clone an entire project onto my ESP32.  The python I want on the device is in a subdirectory of a larger project.  The `cone` argument will take a path, and only files in that directory will be checked out (as if it were the top level).
