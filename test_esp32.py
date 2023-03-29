@@ -46,7 +46,7 @@ del h
 f.close()
 del f'''
     board_sig = pyb.exec_(cmd).decode().strip()
-    print('ygit.py board/local sha1:', board_sig, sig)
+    #print('ygit.py board/local sha1:', board_sig, sig)
     return board_sig != sig
   finally:
     pyb.exit_raw_repl()

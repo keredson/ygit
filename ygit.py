@@ -37,14 +37,13 @@ class DecompIO:
     before = gc.mem_free()
     self._orig_f.seek(self._orig_f_pos)
     gc.collect() # wtf - commenting out this line will cause OOM
-    print('mem_free before dealloc', gc.mem_free()) #wtf2 - same
+#    print('mem_free before dealloc', gc.mem_free()) #wtf2 - same
+    print('%', end='') #wtf2 - same
     del _master_decompio
- #   gc.collect()
-#    print('mem_free after dealloc', gc.mem_free())
     _master_decompio = _DecompIO(self._orig_f)
     self._id = id(_master_decompio)
     self._pos = 0
-    print('mem_free after alloc', self._id, gc.mem_free())
+#    print('mem_free after alloc', self._id, gc.mem_free())
 
   def read(self, nbytes):
     global _master_decompio
@@ -69,7 +68,7 @@ class DecompIO:
     while self._pos < pos:
       toss = _master_decompio.read(min(512,pos-self._pos))
       self._pos += len(toss)
-    print('self._pos, pos',self._pos, pos)
+#    print('self._pos, pos',self._pos, pos)
     assert self._pos == pos
     
     
@@ -274,35 +273,35 @@ class _ObjReader:
   def read(self, nbytes):
     if not nbytes: return b''
     ret = io.BytesIO()
-    print('===============read', nbytes, 'from position',self.pos)
+#    print('===============read', nbytes, 'from position',self.pos)
     for cmd in self.cmds:
       if cmd.start+cmd.nbytes < self.pos: continue
-      print('cmd',cmd, 'self.pos', self.pos, 'nbytes',nbytes)
+#      print('cmd',cmd, 'self.pos', self.pos, 'nbytes',nbytes)
       if cmd.append:
         to_append = cmd.append[self.pos-cmd.start:min(nbytes,cmd.nbytes)]
       else:
         if self.base_obj_pos is None:
-          print('base_obj_reader.__enter__()')
+#          print('base_obj_reader.__enter__()')
           self.base_obj_reader.__enter__()
           self.base_obj_pos = 0
-        print('cmd.base_start+self.pos-cmd.start', cmd.base_start, self.pos, cmd.start)
+#        print('cmd.base_start+self.pos-cmd.start', cmd.base_start, self.pos, cmd.start)
         self.base_obj_reader.decompressed_stream.seek(cmd.base_start+self.pos-cmd.start)
         to_append = self.base_obj_reader.decompressed_stream.read(min(nbytes,cmd.nbytes-(self.pos-cmd.start)))
       ret.write(to_append)
       nbytes -= len(to_append)
       self.pos += len(to_append)
-      print('to_append',len(to_append),to_append)
+#      print('>',to_append)
+      os.listdir()
       if nbytes < 1: break
     ret = ret.getvalue()
     return ret
 
   def digest(self):
+    print('#',end='')
     kind = self.kind
-    print('kind',kind)
     with self as f:
       if kind==6:
         kind = self.base_obj_reader.kind
-        print('---> kind', kind)
       h = hashlib.sha1()
       if kind==1: h.update(b'commit ')
       elif kind==2: h.update(b'tree ')
@@ -351,13 +350,13 @@ def _read_pkt_lines(x, git_dir):
   with open(tfn,'wb') as f:
     while pkt_bytes := x.read(4):
       pkt_bytes = int(pkt_bytes,16)
-      print('pkt_bytes',pkt_bytes)
       pkt_bytes -= 4
       if pkt_bytes>0:
         buf = io.BytesIO()
         channel = x.read(1)
         pkt_bytes -= 1
         if channel==b'\x01':
+          print('.',end='')
           while pkt_bytes>0:
             data = x.read(min(512,pkt_bytes))
             pkt_bytes -= len(data)
@@ -378,6 +377,7 @@ def _read_pkt_lines(x, git_dir):
             print('info:', data[1:].decode().strip())
           else:
             print('UNK:', data)
+  print()
   if pack_size:
     l = len([s for s in os.listdir(git_dir) if s.endswith('.pack')])
     fn = f'{l}.pack'
