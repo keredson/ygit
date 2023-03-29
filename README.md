@@ -34,6 +34,9 @@ ygit.checkout(directory, ref='HEAD')
 ygit.pull(directory, shallow=True, quiet=False, ref='HEAD')
 ygit.fetch(directory, shallow=True, quiet=False, ref='HEAD')
 ygit.status(directory, ref='HEAD')
+ygit.tags(directory)
+ygit.branches(directory)
+ygit.pulls(directory)
 ```
 A `ref` is one of: 
 - `HEAD`

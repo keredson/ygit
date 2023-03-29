@@ -25,6 +25,8 @@ def test_big_clone():
     assert h.hexdigest() == '24cc06819e2c1d8cbf1db84e693e5e87323b2d2d'
     # repo has 184, but that includes a submodule gitdb (submodules are not supported)
     assert int(subprocess.check_output(f'find {td}/* | wc -l', shell=True).decode().strip()) == 183
+    assert sorted(ygit.branches(td)) == sorted(['Fix-#1334', 'black-fmt', 'experiment-2012', 'fix', 'fix-1103', 'fix-ci-tests', 'fix-non-ascii-chars-in-status-lines', 'issue-232-reproduction', 'issue-301-reproduction', 'main', 'master', 'more-robust-git-diff', 'no_devnull_open', 'py2', 'revert-357-autointerrupt_deadlock_fix', 'typing'])
+
 
 
 def test_checkout_older_history_and_update():
@@ -42,6 +44,7 @@ def test_checkout_older_history_and_update():
     assert sorted(os.listdir(os.path.join(td,'.ygit'))) == ['1.pack', '2.pack', '3.pack', 'config', 'idx', 'refs']
     # InMainDir and ugit_boot.py shouldn't be here, but i haven't implemented deleting files yet
     assert sorted(os.listdir(os.path.join(td))) == ['.ygit', 'Folder', 'InMainDir', 'README.md', 'boot.py', 'ugit_boot.py']
+    assert sorted(ygit.branches(td)) == ['main']
     
 
 

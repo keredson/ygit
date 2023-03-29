@@ -82,6 +82,15 @@ def test_gh():
   pyb.exit_raw_repl()
 
 
+def test_big_clone():
+  pyb = init_board()
+  pyb.enter_raw_repl()
+  pyb.exec_('import ygit', stream_output=True)
+  pyb.exec_("ygit.init('https://github.com/gitpython-developers/GitPython.git','GitPython')", stream_output=True)
+  pyb.exec_("ygit.fetch('GitPython')", stream_output=True)
+  pyb.exit_raw_repl()
+
+
 def test_checkout_status():
   pyb = init_board()
   pyb.enter_raw_repl()

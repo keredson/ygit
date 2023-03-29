@@ -20,9 +20,10 @@ except ImportError:
     f.seek(f.tell()-len(dco.unused_data))
     return io.BytesIO(dec)
 
-print('mem_free before _master_decompio', gc.mem_free())
+print('Preallocating 32k buffer required for zlib decompression. Hold onto your butts...')
+#print('mem_free before _master_decompio', gc.mem_free())
 _master_decompio = _DecompIO(io.BytesIO(b'x\x9c\x03\x00\x00\x00\x00\x01'))
-print('mem_free after _master_decompio', gc.mem_free())
+print('...done! mem_free:', gc.mem_free())
 
 class DecompIO:
 
@@ -68,28 +69,6 @@ class DecompIO:
       self._pos += len(toss)
     assert self._pos == pos
     
-    
-
-  # DecompIO doesn't support seek, so fake it
-  # every seek either moves forward or reloads the stream
-  # fortunately pack files *mostly* copy from increasing offsets, so the performance isn't horrible
-  # alt: we could temp write the base object to disk, but that has other concerns.  (what if not enough space? how many writes will wear out the flash?)
-  def _base_obj_stream_seek(self, pos):
-    if self.base_obj_pos is None:
-      self.base_obj_reader.__enter__()
-      self.base_obj_pos = 0
-    if pos < self.base_obj_pos:
-      # reset
-      self.base_obj_reader.__exit__(None, None, None)
-      self.f.seek(self.base_object_offset)
-      self.base_obj_reader = _ObjReader(self.f)
-      self.base_obj_reader.__enter__()
-      self.base_obj_pos = 0
-    while self.base_obj_pos < pos:
-      toss = self.base_obj_reader.decompressed_stream.read(min(512,pos-self.base_obj_pos))
-      self.base_obj_pos += len(toss)
-    assert self.base_obj_pos == pos
-
 
 try:
   from btree import open as btree
@@ -607,6 +586,24 @@ def pull(directory, shallow=True, quiet=False, ref='HEAD'):
   if fetch(directory, quiet=quiet, shallow=shallow, ref=ref):
     checkout(directory, ref=ref)
 
+
+def branches(directory):
+  git_dir = f'{directory}/.ygit'
+  with DB(f'{git_dir}/refs') as db:
+    return [k[len(b'refs/heads/'):].decode() for k in db if k.startswith(b'refs/heads/')]
+  
+
+def tags(directory):
+  git_dir = f'{directory}/.ygit'
+  with DB(f'{git_dir}/refs') as db:
+    return [k[len(b'refs/tags/'):].decode() for k in db if k.startswith(b'refs/tags/')]
+
+  
+def pulls(directory):
+  git_dir = f'{directory}/.ygit'
+  with DB(f'{git_dir}/refs') as db:
+    return [k[len(b'refs/pull/'):].decode() for k in db if k.startswith(b'refs/pull/')]
+  
 
 def _ref_to_commit(git_dir, ref):
   if isinstance(ref,str):
