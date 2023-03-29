@@ -27,60 +27,51 @@ print('mem_free after _master_decompio', gc.mem_free())
 class DecompIO:
 
   def __init__(self, f):
-    global _master_decompio
-    orig_f_pos = f.tell()
-    self._cache = None
-    self._phoenix(f)
-    try:
-      self._cache = None
-      print('ccccc',gc.collect(), gc.mem_free())
-      self._cache = io.BytesIO(_master_decompio.read())
-    except MemoryError:
-      print('ddddd',gc.collect(), gc.mem_free())
-      f.seek(orig_f_pos)
-      self._phoenix(f)
-      with open('__decompio_cache__','wb') as of:
-        while data := _master_decompio.read(512):
-          of.write(data)
-      self._cache = open('__decompio_cache__','rb')
+    self._orig_f_pos = f.tell()
+    self._orig_f = f
+    self._pos = 0
+    self._phoenix()
       
-  def _phoenix(self, f):
-    gc.collect() # wtf - commenting out this line will cause OOM
+  def _phoenix(self):
     global _master_decompio
-    print('mem_free before dealloc', gc.mem_free()) #wtf2 - same
     before = gc.mem_free()
-    self._cache = None
+    self._orig_f.seek(self._orig_f_pos)
+    gc.collect() # wtf - commenting out this line will cause OOM
+    print('mem_free before dealloc', gc.mem_free()) #wtf2 - same
     del _master_decompio
-    gc.collect()
-    while False and gc.mem_free() - before < 10000:
-      print('waiting for gc...', gc.mem_free())
-      time.sleep(1)
-      gc.collect()
-    print('mem_free after dealloc', gc.mem_free())
-    _master_decompio = _DecompIO(f)
+ #   gc.collect()
+#    print('mem_free after dealloc', gc.mem_free())
+    _master_decompio = _DecompIO(self._orig_f)
     self._id = id(_master_decompio)
+    self._pos = 0
     print('mem_free after alloc', self._id, gc.mem_free())
 
   def read(self, nbytes):
-    if self._cache: return self._cache.read(nbytes)
     global _master_decompio
     #print('read', self._id, 'actual', id(_master_decompio), nbytes)
     assert self._id == id(_master_decompio)
-    return _master_decompio.read(nbytes)
+    data = _master_decompio.read(nbytes)
+    self._pos += len(data)
+    return data
     
   def readline(self):
-    if self._cache: return self._cache.readline()
     global _master_decompio
     assert self._id == id(_master_decompio)
-    return _master_decompio.readline()
+    data = _master_decompio.readline()
+    self._pos += len(data)
+    return data
 
   def seek(self, pos):
-    if self._cache: return self._cache.seek(pos)
+    global _master_decompio
+    if pos < self._pos:
+      #reset
+      self._phoenix()
+    while self._pos < pos:
+      toss = _master_decompio.read(min(512,pos-self._pos))
+      self._pos += len(toss)
+    print('self._pos, pos',self._pos, pos)
+    assert self._pos == pos
     
-#  def __del__(self):
-#    if self._cache:
-#      self._cache.close()
-#      os.remove('__decompio_cache__')
     
 
   # DecompIO doesn't support seek, so fake it
@@ -281,29 +272,37 @@ class _ObjReader:
       pass
     
   def read(self, nbytes):
+    if not nbytes: return b''
     ret = io.BytesIO()
+    print('===============read', nbytes, 'from position',self.pos)
     for cmd in self.cmds:
-      if not nbytes: break
       if cmd.start+cmd.nbytes < self.pos: continue
+      print('cmd',cmd, 'self.pos', self.pos, 'nbytes',nbytes)
       if cmd.append:
         to_append = cmd.append[self.pos-cmd.start:min(nbytes,cmd.nbytes)]
       else:
         if self.base_obj_pos is None:
+          print('base_obj_reader.__enter__()')
           self.base_obj_reader.__enter__()
           self.base_obj_pos = 0
+        print('cmd.base_start+self.pos-cmd.start', cmd.base_start, self.pos, cmd.start)
         self.base_obj_reader.decompressed_stream.seek(cmd.base_start+self.pos-cmd.start)
         to_append = self.base_obj_reader.decompressed_stream.read(min(nbytes,cmd.nbytes-(self.pos-cmd.start)))
       ret.write(to_append)
       nbytes -= len(to_append)
       self.pos += len(to_append)
+      print('to_append',len(to_append),to_append)
+      if nbytes < 1: break
     ret = ret.getvalue()
     return ret
 
   def digest(self):
     kind = self.kind
+    print('kind',kind)
     with self as f:
       if kind==6:
         kind = self.base_obj_reader.kind
+        print('---> kind', kind)
       h = hashlib.sha1()
       if kind==1: h.update(b'commit ')
       elif kind==2: h.update(b'tree ')
