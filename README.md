@@ -31,6 +31,7 @@ ygit.clone(repo, directory, shallow=True, cone=None, quiet=False, commit='HEAD')
 ygit.checkout(directory, commit='HEAD')
 ygit.pull(directory, shallow=True, quiet=False, commit='HEAD')
 ygit.fetch(directory, shallow=True, quiet=False, commit='HEAD')
+ygit.status(directory, commit='HEAD')
 ```
 ### Shallow Cloning
 By default clones are [shallow](https://github.blog/2020-12-21-get-up-to-speed-with-partial-clone-and-shallow-clone/) to save space.

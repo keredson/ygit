@@ -1,4 +1,4 @@
-import os, tempfile, zlib
+import os, tempfile, zlib, io
 
 import ampy.files
 import ampy.pyboard
@@ -49,6 +49,22 @@ def test_gh():
   pyb.exec_("ygit.fetch('ugit_test')", stream_output=True)
   pyb.exec_("ygit.checkout('ugit_test')", stream_output=True)
   pyb.exit_raw_repl()
+
+
+def test_checkout_status():
+  pyb = init_board()
+  pyb.enter_raw_repl()
+  pyb.exec_('import ygit, io', stream_output=True)
+  pyb.exec_("ygit.init('https://github.com/turfptax/ugit_test.git','ugit_test')", stream_output=True)
+  pyb.exec_("ygit.fetch('ugit_test', commit='7e5c62596935f96518a931f97ded52b6e8b01594')", stream_output=True)
+  pyb.exec_("ygit.checkout('ugit_test', commit='7e5c62596935f96518a931f97ded52b6e8b01594')", stream_output=True)
+  pyb.exec_("ygit.fetch('ugit_test', commit='cde9c4e1c7a178bb81ccaefb74824cc01e3638e7')", stream_output=True)
+  pyb.exec_('out = io.StringIO()', stream_output=True)
+  pyb.exec_("ygit.status('ugit_test', commit='cde9c4e1c7a178bb81ccaefb74824cc01e3638e7', out=out)", stream_output=True)
+  out = pyb.exec_('print(out.getvalue())')
+  pyb.exit_raw_repl()
+  assert out==b'A ugit_test/Folder\r\nA ugit_test/Folder\r\nD /README.md\r\nD /boot.py\r\nA ugit_test/Folder/SubFolder\r\nA ugit_test/Folder/SubFolder\r\nD /Folder/in_second.py\r\nD /Folder/SubFolder/third_layer.py\r\n\r\n'
+
 
 
 # this repo will fill up the flash, then OSError: 28

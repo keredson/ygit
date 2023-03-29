@@ -1,4 +1,4 @@
-import os, sh, shutil, tempfile
+import os, sh, shutil, tempfile, io
 
 import ygit
 
@@ -92,5 +92,22 @@ def test_updated_file():
     with open(os.path.join(td,'test.txt')) as f:
       assert f.read()=='v2'
     assert len([s for s in os.listdir(os.path.join(td,'.ygit')) if s.endswith('.pack')]) == 2
+    
+def test_status():
+  git, d = build_repo()
+  with open(os.path.join(d,'test.txt'),'w') as f:
+    f.write('v1')
+  git.add('test.txt')
+  git.commit('test.txt', message='v1')
+  with tempfile.TemporaryDirectory() as td:
+    ygit.clone('http://localhost:8889/'+os.path.basename(d),td)
+    out = io.StringIO()
+    ygit.status(td, out=out)
+    assert ''==out.getvalue()
+    with open(os.path.join(td,'test.txt'),'w') as f:
+      f.write('v2')
+    out = io.StringIO()
+    ygit.status(td, out=out)
+    assert 'M /test.txt\n'==out.getvalue()
     
 

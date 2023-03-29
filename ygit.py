@@ -1,4 +1,4 @@
-import gc, socket, ssl, struct, os, zlib, io, binascii, hashlib, json, collections, time
+import gc, socket, ssl, struct, os, zlib, io, binascii, hashlib, json, collections, time, sys
 
 if not hasattr(gc, 'mem_free'):
   class FakeGC:
@@ -468,12 +468,14 @@ def init(repo, directory, cone=None):
 
 
 def clone(repo, directory, shallow=True, cone=None, quiet=False, commit=b'HEAD'):
+  if isinstance(commit,str):
+    commit = commit.encode()
   print(f'cloning {repo} into {directory}')
   init(repo, directory, cone=cone)
   pull(directory, quiet=quiet, shallow=shallow, commit=commit)
 
 
-def checkout(directory, commit=b'HEAD'):
+def checkout(directory, commit='HEAD'):
   if isinstance(commit,str):
     commit = commit.encode()
   git_dir = f'{directory}/.ygit'
@@ -488,12 +490,37 @@ def checkout(directory, commit=b'HEAD'):
       if int(mode)==40000:
         if not _isdir(fn):
           os.mkdir(fn)
+      elif int(mode)==160000:
+        print('ignoring submodule:', fn)
       else:
         _checkout_file(git_dir, db, fn, digest)
 
 
-def _checkout_file(git_dir, db, fn, ref):
-  #print('_checkout_file',git_dir, db, fn, ref)
+def status(directory, out=sys.stdout, commit='HEAD'):
+  if isinstance(commit,str):
+    commit = commit.encode()
+  changes = False
+  git_dir = f'{directory}/.ygit'
+  with DB(f'{git_dir}/idx') as db:
+    if commit==b'HEAD':
+      commit = db[b'HEAD']
+    print('status of', commit.decode())
+    commit = _get_commit(git_dir, db, commit)
+    for mode, fn, digest in _walk_tree(git_dir, db, directory, commit.tree):
+      if int(mode)==40000:
+        if not _isdir(fn):
+          out.write(f'A {fn}\n')
+          changes = True
+      else:
+        status = _checkout_file(git_dir, db, fn, digest, write=False)
+        if status:
+          out.write(f'{status} {fn[len(directory):]}\n')
+          changes = True
+  return changes
+
+
+def _checkout_file(git_dir, db, fn, ref, write=True):
+  print('_checkout_file',git_dir, db, fn, ref, write)
   if not ref: return
   if ref not in db:
     raise Exception(f'unknown ref for file:{fn} sig:{binascii.hexlify(ref)}')
@@ -510,10 +537,10 @@ def _checkout_file(git_dir, db, fn, ref):
       while data:=f.read(1024):
         h.update(data)
     #print('actual', binascii.hexlify(h.digest()), 'desired', binascii.hexlify(ref))
-    update = h.digest()!=ref
+    status = 'M' if h.digest()!=ref else None
   except FileNotFoundError:
-    update = True
-  if update:
+    status = 'D'
+  if status and write:
     if kind==3: kind = 'BLOB'
     if kind==6: kind = 'OFS_DELTA'
     print('writing:', fn, f'({kind})')
@@ -526,9 +553,8 @@ def _checkout_file(git_dir, db, fn, ref):
             fout.write(data)
         del fin
   gc.collect()
+  return status
 
-        #print('cccccbefore', gc.mem_free(), gc.collect() or 'after', gc.mem_free())
-  
 
 def _get_commit(git_dir, db, ref):
   data = db[binascii.unhexlify(ref)]
