@@ -51,6 +51,9 @@ A `ref` is one of:
 - a tag
 - a pull
 
+## Design
+This is a partial `git` client implemented in pure python, targeting MicroPython.   It speaks to HTTP servers using the [smart client protocol](https://www.git-scm.com/docs/http-protocol).
+
 ### Shallow Cloning
 By default clones are [shallow](https://github.blog/2020-12-21-get-up-to-speed-with-partial-clone-and-shallow-clone/) to
 save space.  If you try to checkout an unknown ref, `ygit` will fetch a new packfile from the original server.
@@ -61,9 +64,6 @@ Usually I don't want to clone an entire project onto my ESP32.  The python I wan
 
 ### Authentication
 Supply a username/password to `clone()`.  The credentials will be stored on the device, AES encrypted with the machine id as the key.
-
-## Design
-This is a partial `git` client implemented in pure python, targeting MicroPython.   It speaks to HTTP servers using the [smart client protocol](https://www.git-scm.com/docs/http-protocol).
 
 ## Related
 This was inspired by [ugit](https://github.com/turfptax/ugit), which didn't work for my use case.  (Talking to a non-github server, checking out only a subdirectory, and supporting incremental updates.)
