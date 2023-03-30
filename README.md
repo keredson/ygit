@@ -55,9 +55,7 @@ repo.update_authentication(username, password)
 A `ref` is one of: 
 - `HEAD`
 - a commit (ex: `7b36b4cb1616694d8562f3adea656a709b9831d9`)
-- a branch name
-- a tag
-- a pull
+- a branch / tag / pull
 
 ## Design
 
