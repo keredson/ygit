@@ -14,7 +14,7 @@ To clone a repo, run:
 ```python
 >>> repo = ygit.clone('https://github.com/turfptax/ugit_test.git')
 ```
-The second argument is the target directory (usually `'.'`).  This will produce a shallow clone (at `HEAD`) by default.  It will not delete any files in the target directory, but it will overwrite them if conflicting.  The normal git files you'd expect (`config`, `*.pack`, `IDX`) will be in `.ygit`.  You only need to run this once.
+If you don't want to clone into the root directory of your device, pass a target directory as a second argument.  This will produce a shallow clone (at `HEAD`) by default.  It will not delete any files in the target directory, but it will overwrite them if conflicting.  The normal git files you'd expect (`config`, `*.pack`, `IDX`) will be in `.ygit`.  You only need to run this once.
 
 To update:
 ```python
