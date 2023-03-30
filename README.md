@@ -1,7 +1,7 @@
 ![header](misc/header.png)
 
 # ygit
-A tiny (yocto) git client for MicroPython.
+A tiny (yocto) git client for MicroPython.  It speaks to git HTTP/HTTPS servers using the ubiquitous [smart client protocol](https://www.git-scm.com/docs/http-protocol#_smart_clients).
 
 ## Install
 ```bash
@@ -53,7 +53,6 @@ A `ref` is one of:
 - a pull
 
 ## Design
-This is a partial `git` client implemented in pure python, targeting MicroPython.   It speaks to HTTP servers using the [smart client protocol](https://www.git-scm.com/docs/http-protocol).
 
 ### Shallow Cloning
 By default clones are [shallow](https://github.blog/2020-12-21-get-up-to-speed-with-partial-clone-and-shallow-clone/) to
