@@ -375,7 +375,7 @@ def _rmrf(directory):
     os.rmdir(git_dir)
 
 
-def clone(url, directory='.', shallow=True, cone=None, quiet=False, ref='HEAD', username=None, password=None):
+def clone(url, directory='.', *, username=None, password=None, ref='HEAD', shallow=True, cone=None, quiet=False):
   if isinstance(ref,str):
     ref = ref.encode()
   print(f'cloning {url} into {directory} @ {ref.decode()}')
@@ -397,16 +397,19 @@ class Repo:
     return f'{self._dir}/.ygit'
     
     
+  def update_authentication(self, username, password, url=None):
+    with DB(f'{self._git_dir}/config') as db:
+      self._save_auth(db, username, password, url=url)
+    
+    
   def _save_auth(self, db, username, password, url=None):
     if isinstance(url, str):
       url = url.encode()
     c = cryptolib.aes(b'ygit'+binascii.hexlify(machine.unique_id()).decode(),1)
     s = f'{username}:{password}'.encode()
-    print('s',s)
     b64 = b'Basic '+binascii.b2a_base64(s)[:-1]
     if len(b64)%16:
       b64 += b' '*(16-len(b64)%16) # right pad to %16 bytes long
-    print('b64', len(b64), b64)
     encrypted = c.encrypt(b64)
     if not url:
       url = db[b'repo']

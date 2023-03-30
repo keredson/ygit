@@ -1,4 +1,4 @@
-import os, tempfile, zlib, io, socket, hashlib, json
+import os, tempfile, zlib, io, socket, hashlib, json, pytest
 
 import ampy.files
 import ampy.pyboard
@@ -148,6 +148,30 @@ def test_auth():
     password = test_secrets['github']['password']
     ret = pyb.exec_(f"repo = ygit.clone({repr(private_repo)}, 'private_repo', username={repr(username)}, password={repr(password)})", stream_output=True)
     assert b'writing:' in ret
+  finally:
+    pyb.exit_raw_repl()
+
+
+def test_update_auth():
+  pyb = init_board()
+  if not os.path.isfile('test_secrets.json'):
+    print('skipping test because test_secrets.json is missing')
+    return
+  with open('test_secrets.json') as f:
+    test_secrets = json.load(f)
+  pyb.enter_raw_repl()
+  try:
+    pyb.exec_('import ygit', stream_output=True)
+    private_repo = test_secrets['github']['private_repo']
+    username = test_secrets['github']['username']
+    password = test_secrets['github']['password']
+    pyb.exec_("repo = ygit.Repo('private_repo')", stream_output=True)
+    pyb.exec_(f"repo._init({repr(private_repo)})", stream_output=True)
+    with pytest.raises(ampy.pyboard.PyboardError) as e:
+      pyb.exec_("repo.fetch()", stream_output=True)
+    pyb.exec_(f"repo.update_authentication({repr(username)}, {repr(password)})", stream_output=True)
+    pyb.exec_(f"repo.fetch()", stream_output=True)
+    assert b'writing:' in pyb.exec_(f"repo.checkout()", stream_output=True)
   finally:
     pyb.exit_raw_repl()
 
