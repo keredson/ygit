@@ -406,7 +406,7 @@ def _rmrf(directory):
     os.rmdir(git_dir)
 
 
-def clone(url, directory, shallow=True, cone=None, quiet=False, ref='HEAD'):
+def clone(url, directory='.', shallow=True, cone=None, quiet=False, ref='HEAD'):
   if isinstance(ref,str):
     ref = ref.encode()
   print(f'cloning {url} into {directory} @ {ref.decode()}')
@@ -418,19 +418,19 @@ def clone(url, directory, shallow=True, cone=None, quiet=False, ref='HEAD'):
 
 class Repo:
 
-  def __init__(self, directory):
-    self.directory = directory
+  def __init__(self, directory='.'):
+    self._dir = directory
     
   @property
   def _git_dir(self):
-    return f'{self.directory}/.ygit'
+    return f'{self._dir}/.ygit'
     
   def _init(self, repo, cone=None):
     git_dir = self._git_dir
     if _isdir(git_dir):
       raise Exception(f'fatal: ygit repo already exists at {git_dir}')
-    if not _isdir(self.directory):
-      os.mkdir(self.directory)
+    if not _isdir(self._dir):
+      os.mkdir(self._dir)
     os.mkdir(git_dir)
     with DB(f'{git_dir}/config') as db:
       db[b'repo'] = repo.encode()
@@ -446,7 +446,7 @@ class Repo:
     with DB(f'{git_dir}/idx') as db:
       print('checking out', commit.decode())
       commit = self._get_commit(git_dir, db, commit)
-      for mode, fn, digest in self._walk_tree(git_dir, db, self.directory, commit.tree):
+      for mode, fn, digest in self._walk_tree(git_dir, db, self._dir, commit.tree):
         #print('entry', repr(mode), int(mode), fn, binascii.hexlify(digest) if digest else None)
         if int(mode)==40000:
           if not _isdir(fn):
@@ -466,7 +466,7 @@ class Repo:
     with DB(f'{git_dir}/idx') as db:
       print('status of', commit.decode())
       commit = self._get_commit(git_dir, db, commit)
-      for mode, fn, digest in self._walk_tree(git_dir, db, self.directory, commit.tree):
+      for mode, fn, digest in self._walk_tree(git_dir, db, self._dir, commit.tree):
         if int(mode)==40000:
           if not _isdir(fn):
             out.write(f'A {fn}\n')
@@ -474,7 +474,7 @@ class Repo:
         else:
           status = self._checkout_file(git_dir, db, fn, digest, write=False)
           if status:
-            out.write(f'{status} {fn[len(self.directory):]}\n')
+            out.write(f'{status} {fn[len(self._dir):]}\n')
             changes = True
     return changes
 
@@ -595,7 +595,7 @@ class Repo:
 
   
   def fetch(self, shallow=True, quiet=False, ref='HEAD'):
-    directory = self.directory
+    directory = self._dir
     if isinstance(ref,str):
       ref = ref.encode()
     git_dir = f'{directory}/.ygit'
