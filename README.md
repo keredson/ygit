@@ -1,7 +1,10 @@
 ![header](misc/header.png)
 
 # ygit
-A tiny (yocto) git client for [MicroPython](https://micropython.org/) microcontrollers / other memory-constrained environments (<100k).  It speaks to git HTTP/HTTPS servers using the ubiquitous [smart client protocol](https://www.git-scm.com/docs/http-protocol#_smart_clients).
+A tiny (yocto) git client for [MicroPython](https://micropython.org/) microcontrollers / other memory-constrained environments (<100k)
+like the [$6](https://www.amazon.com/Teyleten-Robot-ESP-WROOM-32-Development-Microcontroller/dp/B08246MCL5) 
+[ESP32](https://en.wikipedia.org/wiki/ESP32).  It speaks to git HTTP/HTTPS servers using the ubiquitous 
+[smart client protocol](https://www.git-scm.com/docs/http-protocol#_smart_clients).  I use it to remotely deploy/update code.
 
 
 ## Install
