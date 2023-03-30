@@ -1,7 +1,8 @@
 ![header](misc/header.png)
 
 # ygit
-A tiny (yocto) git client for MicroPython.  It speaks to git HTTP/HTTPS servers using the ubiquitous [smart client protocol](https://www.git-scm.com/docs/http-protocol#_smart_clients).
+A tiny (yocto) git client for [MicroPython](https://micropython.org/) microcontrollers / other memory-constrained environments (<100k).  It speaks to git HTTP/HTTPS servers using the ubiquitous [smart client protocol](https://www.git-scm.com/docs/http-protocol#_smart_clients).
+
 
 ## Install
 ```bash
@@ -27,6 +28,7 @@ Which is the same as:
 >>> repo.checkout()
 ```
 These are incremental operations.  It will only download git objects you don't already have, and only update files when their SHA1 values don't match.
+
 
 ## API
 ```python
@@ -69,10 +71,6 @@ Usually I don't want to clone an entire project onto my ESP32.  The python I wan
 
 ### Authentication
 Supply a username/password to `clone()`.  The credentials will be stored on the device, AES encrypted with the machine id as the key.  For GitHub, use your [personal access token](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/creating-a-personal-access-token) as the password (just like w/ regular `git`).
-
-
-## Related
-This was inspired by [ugit](https://github.com/turfptax/ugit), which didn't work for my use case.  (Talking to a non-github server, checking out only a subdirectory, and supporting incremental updates.)
 
 
 ## Tests
