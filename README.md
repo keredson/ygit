@@ -63,14 +63,16 @@ save space.  If you try to checkout an unknown ref, `ygit` will fetch a new pack
 ### Subdirectory Cloning
 Usually I don't want to clone an entire project onto my ESP32.  The python I want on the device is in a subdirectory of a larger project.  The `cone` argument will take a path, and only files in that directory will be checked out (as if it were the top level).
 
+**TODO:** Do a blob filter to only fetch objects we intend to check out.
+
+
 ### Authentication
 Supply a username/password to `clone()`.  The credentials will be stored on the device, AES encrypted with the machine id as the key.
+
 
 ## Related
 This was inspired by [ugit](https://github.com/turfptax/ugit), which didn't work for my use case.  (Talking to a non-github server, checking out only a subdirectory, and supporting incremental updates.)
 
-## Roadmap
-- `cone` is currently unfinished.
 
 ## Tests
 - `pytest test_localhost.py` (run `nginx -c "$(pwd)/misc/test_nginx.conf" -e stderr` in the background)
