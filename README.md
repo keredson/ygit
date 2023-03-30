@@ -11,32 +11,37 @@ $ ampy -p /dev/ttyUSB0 put ygit.py
 ## Get Started
 To clone a repo, run:
 ```python
->>> ygit.clone('https://github.com/turfptax/ugit_test.git','.')
+>>> repo = ygit.clone('https://github.com/turfptax/ugit_test.git')
 ```
 The second argument is the target directory (usually `'.'`).  This will produce a shallow clone (at `HEAD`) by default.  It will not delete any files in the target directory, but it will overwrite them if conflicting.  The normal git files you'd expect (`config`, `*.pack`, `IDX`) will be in `.ygit`.  You only need to run this once.
 
 To update:
 ```python
->>> ygit.pull('.')
+>>> repo.pull()
 ```
 Which is the same as:
 ```python
->>> ygit.fetch('.')
->>> ygit.checkout('.')
+>>> repo.fetch()
+>>> repo.checkout()
 ```
 These are incremental operations.  It will only download git objects you don't already have, and only update files when their SHA1 values don't match.
 
 ## API
 ```python
-ygit.init(repo, directory, cone=None)
-ygit.clone(repo, directory, shallow=True, cone=None, quiet=False, ref='HEAD')
-ygit.checkout(directory, ref='HEAD')
-ygit.pull(directory, shallow=True, quiet=False, ref='HEAD')
-ygit.fetch(directory, shallow=True, quiet=False, ref='HEAD')
-ygit.status(directory, ref='HEAD')
-ygit.tags(directory)
-ygit.branches(directory)
-ygit.pulls(directory)
+# make a new clone
+repo = ygit.clone(repo, directory='.', shallow=True, cone=None, quiet=False, ref='HEAD')
+
+# control an already cloned repository
+repo = ygit.Repo(directory='.')
+
+# control
+repo.checkout(ref='HEAD')
+repo.pull(shallow=True, quiet=False, ref='HEAD')
+repo.fetch(shallow=True, quiet=False, ref='HEAD')
+repo.status(ref='HEAD')
+repo.tags()
+repo.branches()
+repo.pulls()
 ```
 A `ref` is one of: 
 - `HEAD`
@@ -66,4 +71,4 @@ This was inspired by [ugit](https://github.com/turfptax/ugit), which didn't work
 ## Tests
 - `pytest test_localhost.py` (run `nginx -c "$(pwd)/test_nginx.conf" -e stderr` in the background)
 - `pytest test_gh.py` (runs tests against github)
-- `pytest test_esp32.py` (**WARNING:** will wipe all files except `boot.py` from your device.)
+- `pytest test_micropython.py` (**WARNING:** will wipe all files except `boot.py` from your device.)
