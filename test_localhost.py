@@ -3,7 +3,7 @@ import os, sh, shutil, tempfile, io
 import ygit
 
 # start test http server with:
-# nginx -c "$(pwd)/test_nginx.conf" -e stderr
+# nginx -c "$(pwd)/misc/test_nginx.conf" -e stderr
 
 
 REPOS_DIR = '/tmp/ygit_test_repos'
