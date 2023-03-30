@@ -69,7 +69,6 @@ This is a partial `git` client implemented in pure python, targeting MicroPython
 This was inspired by [ugit](https://github.com/turfptax/ugit), which didn't work for my use case.  (Talking to a non-github server, checking out only a subdirectory, and supporting incremental updates.)
 
 ## Roadmap
-- HTTP authentication for non-public projects.
 - `cone` is currently unfinished.
 
 ## Tests
