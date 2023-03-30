@@ -46,4 +46,10 @@ def test_checkout_older_history_and_update():
     assert sorted(repo.branches()) == ['main']
     
 
+def test_cone():
+  with tempfile.TemporaryDirectory() as td:
+    repo = ygit.clone('https://github.com/turfptax/ugit_test.git', td, cone='Folder')
+    assert os.path.isfile(os.path.join(td,'SubFolder/third_layer.py'))
+
+
 

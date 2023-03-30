@@ -1,4 +1,4 @@
-import os, tempfile, zlib, io, socket, hashlib, json, pytest
+import os, tempfile, zlib, io, socket, hashlib, json, pytest, mpy_cross
 
 import ampy.files
 import ampy.pyboard
@@ -17,13 +17,14 @@ def init_board():
   board_files = ampy.files.Files(pyb)
   existing_files = board_files.ls(long_format=False)
   for fn in existing_files:
-    if fn in ('/boot.py','/ygit.py',): continue
+    if fn in ('/boot.py','/ygit.mpy',): continue
     print('removing', fn)
     try:
       board_files.rm(fn)
     except ampy.pyboard.PyboardError:
       board_files.rmdir(fn)
   if initted: return pyb
+  mpy_cross.run('ygit.py')
   if check_ygit_file(pyb):
     copy_ygit_file(pyb, board_files)
   initted = True
@@ -34,19 +35,19 @@ def check_ygit_file(pyb):
   pyb.enter_raw_repl()
   try:
     h = hashlib.sha1()
-    with open('ygit.py','rb') as f:
+    with open('ygit.mpy','rb') as f:
       h.update(f.read())
     sig = h.hexdigest()
     cmd = '''import hashlib, binascii
 h = hashlib.sha1()
-f = open('ygit.py','rb')
+f = open('ygit.mpy','rb')
 h.update(f.read())
 print(binascii.hexlify(h.digest()).decode())
 del h
 f.close()
 del f'''
     board_sig = pyb.exec_(cmd).decode().strip()
-    #print('ygit.py board/local sha1:', board_sig, sig)
+    #print('ygit.mpy board/local sha1:', board_sig, sig)
     return board_sig != sig
   finally:
     pyb.exit_raw_repl()
@@ -54,18 +55,18 @@ del f'''
 
 def copy_ygit_file(pyb, board_files):
   print('copying ygit...')
-  with open('ygit.py','rb') as f:
-    board_files.put('ygit.py.gz', zlib.compress(f.read()))
+  with open('ygit.mpy','rb') as f:
+    board_files.put('ygit.mpy.gz', zlib.compress(f.read()))
   pyb.enter_raw_repl()
   try:
     pyb.exec_('''import zlib, os
-with open('ygit.py.gz','rb') as fin:
-  with open('ygit.py','wb') as fout:
+with open('ygit.mpy.gz','rb') as fin:
+  with open('ygit.mpy','wb') as fout:
     s = zlib.DecompIO(fin)
     while data:=s.read(256):
       fout.write(data)
 del s, fin, fout
-os.remove('ygit.py.gz')
+os.remove('ygit.mpy.gz')
 gc.collect()
     ''', stream_output=True)
   finally:
@@ -174,6 +175,14 @@ def test_update_auth():
     assert b'writing:' in pyb.exec_(f"repo.checkout()", stream_output=True)
   finally:
     pyb.exit_raw_repl()
+
+
+def test_cone_on_device():
+  pyb = init_board()
+  pyb.enter_raw_repl()
+  pyb.exec_('import ygit', stream_output=True)
+  pyb.exec_("repo = ygit.clone('https://github.com/turfptax/ugit_test.git', 'ugit_test', cone='Folder')", stream_output=True)
+  pyb.exit_raw_repl()
 
 
 

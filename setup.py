@@ -13,7 +13,7 @@ def long_description():
 
 setup(
   name='ygit',
-  version='0.1.1',
+  version='0.3.0',
   description='A tiny (yocto) git client for MicroPython.',
   long_description=long_description(),
   author='Derek Anderson',

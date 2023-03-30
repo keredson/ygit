@@ -22,10 +22,12 @@ except ImportError:
     f.seek(f.tell()-len(dco.unused_data))
     return io.BytesIO(dec)
 
+
 print('Preallocating 32k buffer required for zlib decompression. Hold onto your butts...')
 #print('mem_free before _master_decompio', gc.mem_free())
 _master_decompio = _DecompIO(io.BytesIO(b'x\x9c\x03\x00\x00\x00\x00\x01'))
 print('...done! mem_free:', gc.mem_free())
+
 
 class DecompIO:
 
@@ -468,8 +470,10 @@ class Repo:
     os.mkdir(git_dir)
     with DB(f'{git_dir}/config') as db:
       db[b'repo'] = repo.encode()
+      # currently only a str is supported, but a list of strings is eventually intended
       if cone:
-        db[b'cone'] = cone.encode()
+        if not cone.endswith('/'): cone += '/'
+        db[b'cone'] = json.dumps(cone)
       if username and password:
         self._save_auth(db, username, password)
 
@@ -479,11 +483,20 @@ class Repo:
     commit = self._ref_to_commit(git_dir, ref)
     if not commit:
       raise Exception(f'unknown ref: {ref}')
+    with DB(f'{self._git_dir}/config') as config:
+      cone = json.loads(config[b'cone']) if b'cone' in config else None
     with DB(f'{git_dir}/idx') as db:
       print('checking out', commit.decode())
       commit = self._get_commit(git_dir, db, commit)
       for mode, fn, digest in self._walk_tree(git_dir, db, self._dir, commit.tree):
-        #print('entry', repr(mode), int(mode), fn, binascii.hexlify(digest) if digest else None)
+        #print('entry', repr(mode), int(mode), fn, binascii.hexlify(digest) if digest else None, cone)
+        if cone:
+          repo_fn = fn[len(self._dir)+1:]
+          #print('repo_fn',repo_fn)
+          if repo_fn.startswith(cone):
+            fn = self._dir + '/' + repo_fn[len(cone):]
+          else:
+            continue
         if int(mode)==40000:
           if not _isdir(fn):
             os.mkdir(fn)
@@ -513,6 +526,24 @@ class Repo:
             out.write(f'{status} {fn[len(self._dir):]}\n')
             changes = True
     return changes
+
+
+  def _build_cone_want_list(self, ref='HEAD'):
+    want_list = [] # binary (not hex) digests
+    git_dir = self._git_dir
+    commit = self._ref_to_commit(git_dir, ref)
+    if not commit:
+      raise Exception(f'unknown ref: {ref}')
+    with DB(f'{self._git_dir}/config') as db:
+      cone = json.loads(db[b'cone']) if b'cone' in db else None
+    with DB(f'{self._git_dir}/idx') as idx:
+      commit = self._get_commit(git_dir, idx, commit)
+      for mode, fn, digest in self._walk_tree(git_dir, idx, self._dir, commit.tree):
+        fn = fn[len(self._dir)+1:]
+        if digest and digest not in idx and fn.startswith(cone):
+          want_list.append(digest)
+        #print('fn, digest',fn, digest)
+    return want_list
 
 
   def _checkout_file(self, git_dir, db, fn, ref, write=True):
@@ -637,6 +668,7 @@ class Repo:
     git_dir = f'{directory}/.ygit'
     with DB(f'{git_dir}/config') as db:
       repo = db[b'repo'].decode()
+      cone = json.loads(db[b'cone']) if b'cone' in db else None
     print(f'fetching: {repo} @ {ref.decode()}')
 
     s,x = self._git_upload_pack(repo)
@@ -663,10 +695,17 @@ class Repo:
   #    print('ORIG_HEAD', ORIG_HEAD, requested_rev, rev)
 
     with DB(f'{git_dir}/idx') as db:
-      return self._fetch(git_dir, db, shallow, quiet, commit)
+      ret = self._fetch(git_dir, db, shallow, quiet, commit, blobless=bool(cone))
+      if False and cone:
+        want_list = self._build_cone_want_list(ref=commit)
+        #print('want_list',want_list)
+        if want_list:
+          self._fetch(git_dir, db, shallow, quiet, commit, want_list=want_list)
+
+    return ret
 
 
-  def _fetch(self, git_dir, db, shallow, quiet, commit):
+  def _fetch(self, git_dir, db, shallow, quiet, commit, blobless=False):
     assert commit is None or isinstance(commit, bytes) and len(commit)==40 # only full hashes here
 
     with DB(f'{git_dir}/config') as config_db:
@@ -687,7 +726,7 @@ class Repo:
     if quiet: cmd.write(b'000fno-progress')
     if quiet: cmd.write(b'000finclude-tag')
     if shallow: cmd.write(b'000cdeepen 1')
-    if False: cmd.write(b'0014filter blob:none') # blobless clone
+    if False and blobless: cmd.write(b'0014filter blob:none') # blobless clone
     cmd.write(f'0032want {commit.decode()}\n'.encode())
     for k in db.keys():
       if k==b'HEAD': continue
