@@ -76,6 +76,7 @@ This was inspired by [ugit](https://github.com/turfptax/ugit), which didn't work
 
 
 ## Tests
-- `pytest test_localhost.py` (run `nginx -c "$(pwd)/misc/test_nginx.conf" -e stderr` in the background)
-- `pytest test_gh.py` (runs tests against github)
-- `pytest test_micropython.py` (**WARNING:** will wipe all files except `boot.py` from your device.)
+- *Prereq:* Run `nginx -c "$(pwd)/misc/test_nginx.conf" -e stderr` in the background for the local teets.
+- `pytest test_localhost.py` (runs local tests) 
+- `pytest test_gh.py` (runs github tests)
+- `pytest test_micropython.py` (**WARNING:** will wipe all files except `boot.py` from your MicroPython device at `/dev/ttyUSB0`.)
