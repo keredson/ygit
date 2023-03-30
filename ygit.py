@@ -418,6 +418,7 @@ class Repo:
 
     
   def _git_upload_pack(self, url, data=None):
+    gc.collect()
     proto, _, host, path = url.split("/", 3)
     port = 443 if proto=='https:' else 80
     if ':' in host:
