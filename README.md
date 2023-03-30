@@ -73,6 +73,6 @@ This was inspired by [ugit](https://github.com/turfptax/ugit), which didn't work
 - `cone` is currently unfinished.
 
 ## Tests
-- `pytest test_localhost.py` (run `nginx -c "$(pwd)/test_nginx.conf" -e stderr` in the background)
+- `pytest test_localhost.py` (run `nginx -c "$(pwd)/misc/test_nginx.conf" -e stderr` in the background)
 - `pytest test_gh.py` (runs tests against github)
 - `pytest test_micropython.py` (**WARNING:** will wipe all files except `boot.py` from your device.)
