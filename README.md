@@ -30,7 +30,7 @@ These are incremental operations.  It will only download git objects you don't a
 ## API
 ```python
 # make a new clone
-repo = ygit.clone(repo, directory='.', shallow=True, cone=None, quiet=False, ref='HEAD')
+repo = ygit.clone(repo, directory='.', shallow=True, cone=None, quiet=False, ref='HEAD', username=None, password=None)
 
 # control an already cloned repository
 repo = ygit.Repo(directory='.')
@@ -58,6 +58,9 @@ save space.  If you try to checkout an unknown ref, `ygit` will fetch a new pack
 
 ### Subdirectory Cloning
 Usually I don't want to clone an entire project onto my ESP32.  The python I want on the device is in a subdirectory of a larger project.  The `cone` argument will take a path, and only files in that directory will be checked out (as if it were the top level).
+
+### Authentication
+Supply a username/password to `clone()`.  The credentials will be stored on the device, AES encrypted with the machine id as the key.
 
 ## Design
 This is a partial `git` client implemented in pure python, targeting MicroPython.   It speaks to HTTP servers using the [smart client protocol](https://www.git-scm.com/docs/http-protocol).
