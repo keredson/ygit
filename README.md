@@ -5,6 +5,7 @@ A tiny (yocto) git client for MicroPython.
 
 ## Install
 ```bash
+$ wget https://raw.githubusercontent.com/keredson/ygit/main/ygit.py
 $ ampy -p /dev/ttyUSB0 put ygit.py
 ```
 
