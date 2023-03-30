@@ -68,7 +68,7 @@ Usually I don't want to clone an entire project onto my ESP32.  The python I wan
 
 
 ### Authentication
-Supply a username/password to `clone()`.  The credentials will be stored on the device, AES encrypted with the machine id as the key.
+Supply a username/password to `clone()`.  The credentials will be stored on the device, AES encrypted with the machine id as the key.  For GitHub, use your personal access token as the password (just like w/ regular `git`).
 
 
 ## Related
