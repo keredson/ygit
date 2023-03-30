@@ -299,14 +299,14 @@ def _read_until(f, stop_byte):
   return buf.getvalue()
 
     
-def _parse_pkt_file(git_dir, fn, db):
-  pkt_id = int(fn.split('.')[0])
-  with open(f'{git_dir}/{fn}','rb') as f:
+def _parse_pkt_file(git_dir, fn, pkt_id, db):
+#  pkt_id = int(fn.split('.')[0])
+  with open(fn,'rb') as f:
     assert f.read(4)==b'PACK'
     version = struct.unpack('!I', f.read(4))[0]
     del version
     cnt = struct.unpack('!I', f.read(4))[0]
-    print('reading', cnt, 'objs from', fn)
+    #print('reading', cnt, 'objs from', fn)
     for i in range(cnt):
       fpos = f.tell()
       o = _ObjReader(f)
@@ -320,52 +320,9 @@ def _parse_pkt_file(git_dir, fn, db):
     #TODO parse tail, which is hash of packet
     #print('done at', f.tell(), 'remaining', len(f.read()))
 
-def _read_pkt_lines(x, git_dir):
-  HEAD = None
-  tfn = f'{git_dir}/tmp.pack'
-  pack_size = 0
-  with open(tfn,'wb') as f:
-    while pkt_bytes := x.read(4):
-      pkt_bytes = int(pkt_bytes,16)
-      pkt_bytes -= 4
-      if pkt_bytes>0:
-        buf = io.BytesIO()
-        channel = x.read(1)
-        pkt_bytes -= 1
-        if channel==b'\x01':
-          print('.',end='')
-          while pkt_bytes>0:
-            data = x.read(min(512,pkt_bytes))
-            pkt_bytes -= len(data)
-            f.write(data)
-            pack_size += len(data)
-        else:
-          buf.write(channel)
-          while pkt_bytes>0:
-            bits = x.read(min(512,pkt_bytes))
-            if not bits: break
-            pkt_bytes -= len(bits)
-            buf.write(bits)
-          data = buf.getvalue()
-          if data[40:46]==b' HEAD ':
-            HEAD = data[:40]
-            print('HEAD:',HEAD.decode())
-          if data.startswith(b'\x02'):
-            print('info:', data[1:].decode().strip())
-          else:
-            print('UNK:', data)
-  print()
-  if pack_size:
-    l = len([s for s in os.listdir(git_dir) if s.endswith('.pack')])
-    fn = f'{l}.pack'
-    
-    os.rename(tfn, f'{git_dir}/{fn}')
-    return HEAD, [fn]
-  else:
-    os.remove(tfn)
-    return HEAD, []
 
 def _iter_pkt_lines(x, f=None):
+  ticks = False
   while pkt_bytes := x.read(4):
     pkt_bytes = int(pkt_bytes,16)
     pkt_bytes -= 4
@@ -378,6 +335,12 @@ def _iter_pkt_lines(x, f=None):
           data = x.read(min(512,pkt_bytes))
           pkt_bytes -= len(data)
           if f: f.write(data)
+#        print('>',end='')
+        if ticks:
+          sys.stdout.write('>')
+        else:
+          ticks = True
+          # skip the first tick
       else:
         buf.write(channel)
         while pkt_bytes>0:
@@ -386,6 +349,9 @@ def _iter_pkt_lines(x, f=None):
           pkt_bytes -= len(bits)
           buf.write(bits)
         data = buf.getvalue()
+        if ticks:
+          sys.stdout.write('\n')
+          ticks = False
         yield data
 
 
@@ -652,7 +618,6 @@ def fetch(directory, shallow=True, quiet=False, ref='HEAD'):
     return _fetch(git_dir, db, shallow, quiet, commit)
 
 def _fetch(git_dir, db, shallow, quiet, commit):
-  print('_fetch', git_dir, db, shallow, quiet, commit)
   assert commit is None or isinstance(commit, bytes) and len(commit)==40 # only full hashes here
 
   with DB(f'{git_dir}/config') as config_db:
@@ -684,8 +649,21 @@ def _fetch(git_dir, db, shallow, quiet, commit):
   s,x = _request(repo, data=cmd.getvalue())
   _read_headers(x)
   db.flush()
-  for fn in _read_pkt_lines(x, git_dir)[1]:
-    _parse_pkt_file(git_dir, fn, db)
+
+  i = len([s for s in os.listdir(git_dir) if s.endswith('.pack')])+1
+  fn = f'{git_dir}/{i}.pack'
+  with open(fn,'wb') as f:
+    for packline in _iter_pkt_lines(x, f=f):
+      if packline.startswith(b'\x02'):
+        print(packline[1:].decode().strip())
+      if packline.startswith(b'\x03'):
+        raise Exception(packline[1:].decode().strip())
+  _parse_pkt_file(git_dir, fn, i, db)
+
+
+#  for fn in _read_pkt_lines(x, git_dir)[1]:
+#    _parse_pkt_file(git_dir, fn, db)
+    
 
   s.close()
   return True
