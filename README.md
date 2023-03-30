@@ -30,7 +30,8 @@ These are incremental operations.  It will only download git objects you don't a
 ## API
 ```python
 # make a new clone
-repo = ygit.clone(repo, directory='.', shallow=True, cone=None, quiet=False, ref='HEAD', username=None, password=None)
+repo = ygit.clone(repo, directory='.', shallow=True, cone=None, 
+                  quiet=False, ref='HEAD', username=None, password=None)
 
 # control an already cloned repository
 repo = ygit.Repo(directory='.')
