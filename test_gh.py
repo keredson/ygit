@@ -28,7 +28,6 @@ def test_big_clone():
     assert sorted(repo.branches()) == sorted(['Fix-#1334', 'black-fmt', 'experiment-2012', 'fix', 'fix-1103', 'fix-ci-tests', 'fix-non-ascii-chars-in-status-lines', 'issue-232-reproduction', 'issue-301-reproduction', 'main', 'master', 'more-robust-git-diff', 'no_devnull_open', 'py2', 'revert-357-autointerrupt_deadlock_fix', 'typing'])
 
 
-
 def test_checkout_older_history_and_update():
   with tempfile.TemporaryDirectory() as td:
     repo = ygit.clone('https://github.com/turfptax/ugit_test.git',td, ref='7e5c62596935f96518a931f97ded52b6e8b01594')
@@ -46,6 +45,5 @@ def test_checkout_older_history_and_update():
     assert sorted(os.listdir(os.path.join(td))) == ['.ygit', 'Folder', 'InMainDir', 'README.md', 'boot.py', 'ugit_boot.py']
     assert sorted(repo.branches()) == ['main']
     
-
 
 

@@ -1,4 +1,4 @@
-import os, tempfile, zlib, io, socket, hashlib
+import os, tempfile, zlib, io, socket, hashlib, json
 
 import ampy.files
 import ampy.pyboard
@@ -131,6 +131,26 @@ def test_branch():
   assert b'v1\r\n' == pyb.exec_("f = open('test_branch/test.txt','r'); print(f.read())")
   pyb.exec_("repo.checkout(ref='abranch')", stream_output=True)
   assert b'a branch\r\n' == pyb.exec_("f = open('test_branch/branch.txt','r'); print(f.read())")
+
+
+def test_auth():
+  pyb = init_board()
+  if not os.path.isfile('test_secrets.json'):
+    print('skipping test because test_secrets.json is missing')
+    return
+  with open('test_secrets.json') as f:
+    test_secrets = json.load(f)
+  pyb.enter_raw_repl()
+  try:
+    pyb.exec_('import ygit', stream_output=True)
+    private_repo = test_secrets['github']['private_repo']
+    username = test_secrets['github']['username']
+    password = test_secrets['github']['password']
+    ret = pyb.exec_(f"repo = ygit.clone({repr(private_repo)}, 'private_repo', username={repr(username)}, password={repr(password)})", stream_output=True)
+    assert b'writing:' in ret
+  finally:
+    pyb.exit_raw_repl()
+
 
 
 def get_ip():
