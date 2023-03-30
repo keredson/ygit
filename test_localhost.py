@@ -56,22 +56,22 @@ def test_fetch_no_update():
   git.add('test.txt')
   git.commit('test.txt', message='-')
   with tempfile.TemporaryDirectory() as td:
-    ygit.clone('http://localhost:8889/'+os.path.basename(d),td)
+    repo = ygit.clone('http://localhost:8889/'+os.path.basename(d),td)
     assert len([s for s in os.listdir(os.path.join(td,'.ygit')) if s.endswith('.pack')]) == 1
-    ygit.fetch(td)
+    repo.fetch()
     assert len([s for s in os.listdir(os.path.join(td,'.ygit')) if s.endswith('.pack')]) == 1
 
     
 def test_fetch_after_adding_to_empty_repo():
   git, d = build_repo()
   with tempfile.TemporaryDirectory() as td:
-    ygit.clone('http://localhost:8889/'+os.path.basename(d),td)
+    repo = ygit.clone('http://localhost:8889/'+os.path.basename(d),td)
     assert len([s for s in os.listdir(os.path.join(td,'.ygit')) if s.endswith('.pack')]) == 0
     with open(os.path.join(d,'test.txt'),'w') as f:
       f.write('woot!')
     git.add('test.txt')
     git.commit('test.txt', message='-')
-    ygit.fetch(td)
+    repo.fetch()
     assert len([s for s in os.listdir(os.path.join(td,'.ygit')) if s.endswith('.pack')]) == 1
     
     
@@ -82,13 +82,13 @@ def test_updated_file():
   git.add('test.txt')
   git.commit('test.txt', message='v1')
   with tempfile.TemporaryDirectory() as td:
-    ygit.clone('http://localhost:8889/'+os.path.basename(d),td)
+    repo = ygit.clone('http://localhost:8889/'+os.path.basename(d),td)
     with open(os.path.join(td,'test.txt')) as f:
       assert f.read()=='v1'
     with open(os.path.join(d,'test.txt'),'w') as f:
       f.write('v2')
     git.commit('test.txt', message='v2')
-    ygit.pull(td)
+    repo.pull()
     with open(os.path.join(td,'test.txt')) as f:
       assert f.read()=='v2'
     assert len([s for s in os.listdir(os.path.join(td,'.ygit')) if s.endswith('.pack')]) == 2
@@ -100,14 +100,14 @@ def test_status():
   git.add('test.txt')
   git.commit('test.txt', message='v1')
   with tempfile.TemporaryDirectory() as td:
-    ygit.clone('http://localhost:8889/'+os.path.basename(d),td)
+    repo = ygit.clone('http://localhost:8889/'+os.path.basename(d),td)
     out = io.StringIO()
-    ygit.status(td, out=out)
+    repo.status(out=out)
     assert ''==out.getvalue()
     with open(os.path.join(td,'test.txt'),'w') as f:
       f.write('v2')
     out = io.StringIO()
-    ygit.status(td, out=out)
+    repo.status(out=out)
     assert 'M /test.txt\n'==out.getvalue()
     
     
@@ -124,11 +124,11 @@ def test_branch():
   git.commit('branch.txt', message='added a branch')
   git.checkout('master')
   with tempfile.TemporaryDirectory() as td:
-    ygit.clone('http://localhost:8889/'+os.path.basename(d),td)
+    repo = ygit.clone('http://localhost:8889/'+os.path.basename(d),td)
     with open(os.path.join(td,'test.txt')) as f:
       assert f.read()=='v1'
     assert not os.path.isfile(os.path.join(td,'branch.txt'))
-    ygit.checkout(td, ref='abranch')
+    repo.checkout(ref='abranch')
     with open(os.path.join(td,'branch.txt')) as f:
       assert f.read()=='abranch'
     
