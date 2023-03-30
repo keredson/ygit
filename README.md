@@ -6,7 +6,8 @@ A tiny (yocto) git client for MicroPython.  It speaks to git HTTP/HTTPS servers 
 ## Install
 ```bash
 $ wget https://raw.githubusercontent.com/keredson/ygit/main/ygit.py
-$ ampy -p /dev/ttyUSB0 put ygit.py
+$ mpy-cross ygit.py
+$ ampy -p /dev/ttyUSB0 put ygit.mpy
 ```
 
 ## Get Started
