@@ -5,11 +5,11 @@ import ygit
 
 def test_clone():
   with tempfile.TemporaryDirectory() as td:
-    repo = ygit.clone('https://github.com/turfptax/ugit_test.git',td)
+    repo = ygit.clone('https://github.com/keredson/ygit.git',td)
     assert os.path.isdir(os.path.join(td,'.ygit'))
     assert os.path.isfile(os.path.join(td,'.ygit','config'))
     assert os.path.isfile(os.path.join(td,'.ygit','idx'))
-    assert os.path.isfile(os.path.join(td,'boot.py'))
+    assert os.path.isfile(os.path.join(td,'ygit.py'))
 
     
 def test_big_clone():
@@ -48,8 +48,8 @@ def test_checkout_older_history_and_update():
 
 def test_cone():
   with tempfile.TemporaryDirectory() as td:
-    repo = ygit.clone('https://github.com/turfptax/ugit_test.git', td, cone='Folder')
-    assert os.path.isfile(os.path.join(td,'SubFolder/third_layer.py'))
+    repo = ygit.clone('https://github.com/keredson/ygit.git', td, cone='misc')
+    assert os.path.isfile(os.path.join(td,'test_nginx.conf'))
 
 
 def test_log():
