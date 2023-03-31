@@ -117,12 +117,13 @@ def test_branch():
     f.write('v1')
   git.add('test.txt')
   git.commit('test.txt', message='v1')
+  main_branch = git.branch(show_current=True).strip()
   git.checkout('-b', 'abranch')
   with open(os.path.join(d,'branch.txt'),'w') as f:
     f.write('abranch')
   git.add('branch.txt')
   git.commit('branch.txt', message='added a branch')
-  git.checkout('master')
+  git.checkout(main_branch)
   with tempfile.TemporaryDirectory() as td:
     repo = ygit.clone('http://localhost:8889/'+os.path.basename(d),td)
     with open(os.path.join(td,'test.txt')) as f:
