@@ -3,7 +3,7 @@
 # -- Project information
 
 import sys
-sys.path.append('..')
+sys.path.append('.')
 
 project = 'ygit'
 copyright = '2023, Derek Anderson'
