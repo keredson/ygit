@@ -23,13 +23,17 @@ except ImportError:
     return io.BytesIO(dec)
 
 
-print('Preallocating 32k buffer required for zlib decompression. Hold onto your butts...')
-#print('mem_free before _master_decompio', gc.mem_free())
-_master_decompio = _DecompIO(io.BytesIO(b'x\x9c\x03\x00\x00\x00\x00\x01'))
-print('...done! mem_free:', gc.mem_free())
+_master_decompio = None # _DecompIO(io.BytesIO(b'x\x9c\x03\x00\x00\x00\x00\x01')) # compressed empty string
 
 
 class DecompIO:
+
+  @classmethod
+  def kill(cls):
+    global _master_decompio
+    _master_decompio = None
+    gc.collect()
+  
 
   def __init__(self, f):
     self._orig_f_pos = f.tell()
@@ -43,9 +47,17 @@ class DecompIO:
     self._orig_f.seek(self._orig_f_pos)
     gc.collect() # wtf - commenting out this line will cause OOM
     os.listdir()
-    del _master_decompio
+    _master_decompio = None
     gc.collect()
-    _master_decompio = _DecompIO(self._orig_f)
+    try:
+      _master_decompio = _DecompIO(self._orig_f)
+    except MemoryError as e:
+      if gc.mem_free() > 32000:
+        print(f"Free memory is {gc.mem_free()}, but ygit could not allocate a contiguous 32k chunk of RAM for the zlib buffer (required for git object decompression).")
+        print("This is likely due to memory fragmentation.  Try using mpy-cross to precompile your python code before copying to the device if you're not already, or search 'micropython memory fragmentation'.")
+      else:
+        print(f"Free memory is {gc.mem_free()}, less than the 32k ygit needs for the zlib buffer (required for git object decompression).")
+      raise e
     self._id = id(_master_decompio)
     self._pos = 0
 
@@ -383,8 +395,11 @@ def clone(url, directory='.', *, username=None, password=None, ref='HEAD', shall
   print(f'cloning {url} into {directory} @ {ref.decode()}')
   repo = Repo(directory)
   repo._init(url, cone=cone, username=username, password=password)
-  repo.pull(quiet=quiet, shallow=shallow, ref=ref)
-  return repo
+  try:
+    repo.pull(quiet=quiet, shallow=shallow, ref=ref)
+    return repo
+  finally:
+    DecompIO.kill()
 
 
 class Repo:
@@ -479,31 +494,34 @@ class Repo:
 
 
   def checkout(self, ref='HEAD'):
-    git_dir = self._git_dir
-    commit = self._ref_to_commit(ref)
-    if not commit:
-      raise Exception(f'unknown ref: {ref}')
-    with DB(f'{self._git_dir}/config') as config:
-      cone = json.loads(config[b'cone']) if b'cone' in config else None
-    with DB(f'{git_dir}/idx') as db:
-      print('checking out', commit.decode())
-      commit = self._get_commit(db, commit)
-      for mode, fn, digest in self._walk_tree(git_dir, db, self._dir, commit.tree):
-        #print('entry', repr(mode), int(mode), fn, binascii.hexlify(digest) if digest else None, cone)
-        if cone:
-          repo_fn = fn[len(self._dir)+1:]
-          #print('repo_fn',repo_fn)
-          if repo_fn.startswith(cone):
-            fn = self._dir + '/' + repo_fn[len(cone):]
+    try:
+      git_dir = self._git_dir
+      commit = self._ref_to_commit(ref)
+      if not commit:
+        raise Exception(f'unknown ref: {ref}')
+      with DB(f'{self._git_dir}/config') as config:
+        cone = json.loads(config[b'cone']) if b'cone' in config else None
+      with DB(f'{git_dir}/idx') as db:
+        print('checking out', commit.decode())
+        commit = self._get_commit(db, commit)
+        for mode, fn, digest in self._walk_tree(git_dir, db, self._dir, commit.tree):
+          #print('entry', repr(mode), int(mode), fn, binascii.hexlify(digest) if digest else None, cone)
+          if cone:
+            repo_fn = fn[len(self._dir)+1:]
+            #print('repo_fn',repo_fn)
+            if repo_fn.startswith(cone):
+              fn = self._dir + '/' + repo_fn[len(cone):]
+            else:
+              continue
+          if int(mode)==40000:
+            if not _isdir(fn):
+              os.mkdir(fn)
+          elif int(mode)==160000:
+            print('ignoring submodule:', fn)
           else:
-            continue
-        if int(mode)==40000:
-          if not _isdir(fn):
-            os.mkdir(fn)
-        elif int(mode)==160000:
-          print('ignoring submodule:', fn)
-        else:
-          self._checkout_file(git_dir, db, fn, digest)
+            self._checkout_file(git_dir, db, fn, digest)
+    finally:
+      DecompIO.kill()
   
   
   def log(self, ref='HEAD', out=None):
@@ -657,8 +675,11 @@ class Repo:
 
 
   def pull(self, shallow=True, quiet=False, ref='HEAD'):
-    if self.fetch(quiet=quiet, shallow=shallow, ref=ref):
-      self.checkout(ref=ref)
+    try:
+      if self.fetch(quiet=quiet, shallow=shallow, ref=ref):
+        self.checkout(ref=ref)
+    finally:
+      DecompIO.kill()
 
 
   def branches(self):
@@ -692,49 +713,52 @@ class Repo:
 
   
   def fetch(self, shallow=True, quiet=False, ref='HEAD', blobless=None):
-    directory = self._dir
-    if isinstance(ref,str):
-      ref = ref.encode()
-    git_dir = f'{directory}/.ygit'
-    with DB(f'{git_dir}/config') as db:
-      repo = db[b'repo'].decode()
-      cone = json.loads(db[b'cone']) if b'cone' in db else None
-    print(f'fetching: {repo} @ {ref.decode()}')
+    try:
+      directory = self._dir
+      if isinstance(ref,str):
+        ref = ref.encode()
+      git_dir = f'{directory}/.ygit'
+      with DB(f'{git_dir}/config') as db:
+        repo = db[b'repo'].decode()
+        cone = json.loads(db[b'cone']) if b'cone' in db else None
+      print(f'fetching: {repo} @ {ref.decode()}')
 
-    s,x = self._git_upload_pack(repo)
-    _read_headers(x)
-    capabilities = None
-    with DB(f'{git_dir}/refs') as db:
-      for packline in _iter_pkt_lines(x):
-        if packline.startswith(b'#'): continue
-        if b'\x00' in packline:
-          packline, capabilities = packline.split(b'\x00', 1)
-        arev, aref = packline.split(b' ', 1)
-        aref = aref.strip()
-        db[aref] =binascii.unhexlify(arev)
-      HEAD = binascii.hexlify(db[b'HEAD']) if b'HEAD' in db else None # empty repo
-    s.close()
-    
-    commit = self._ref_to_commit(ref)
+      s,x = self._git_upload_pack(repo)
+      _read_headers(x)
+      capabilities = None
+      with DB(f'{git_dir}/refs') as db:
+        for packline in _iter_pkt_lines(x):
+          if packline.startswith(b'#'): continue
+          if b'\x00' in packline:
+            packline, capabilities = packline.split(b'\x00', 1)
+          arev, aref = packline.split(b' ', 1)
+          aref = aref.strip()
+          db[aref] =binascii.unhexlify(arev)
+        HEAD = binascii.hexlify(db[b'HEAD']) if b'HEAD' in db else None # empty repo
+      s.close()
+      
+      commit = self._ref_to_commit(ref)
 
-  #  if requested_rev==b'HEAD':
-  #    s,x = _request(repo, data=b'0014command=ls-refs\n0014agent=git/2.37.20016object-format=sha100010009peel\n000csymrefs\n000bunborn\n0014ref-prefix HEAD\n001bref-prefix refs/heads/\n0000')
-  #    _read_headers(x)
-  #    ORIG_HEAD = _read_pkt_lines(x, git_dir)[0]
-  #    s.close()
-  #    print('ORIG_HEAD', ORIG_HEAD, requested_rev, rev)
+    #  if requested_rev==b'HEAD':
+    #    s,x = _request(repo, data=b'0014command=ls-refs\n0014agent=git/2.37.20016object-format=sha100010009peel\n000csymrefs\n000bunborn\n0014ref-prefix HEAD\n001bref-prefix refs/heads/\n0000')
+    #    _read_headers(x)
+    #    ORIG_HEAD = _read_pkt_lines(x, git_dir)[0]
+    #    s.close()
+    #    print('ORIG_HEAD', ORIG_HEAD, requested_rev, rev)
 
-    with DB(f'{git_dir}/idx') as db:
-      if blobless is None:
-        blobless = bool(cone)
-      ret = self._fetch(git_dir, db, shallow, quiet, commit, blobless=blobless)
-      if False and cone:
-        want_list = self._build_cone_want_list(ref=commit)
-        #print('want_list',want_list)
-        if want_list:
-          self._fetch(git_dir, db, shallow, quiet, commit, want_list=want_list)
+      with DB(f'{git_dir}/idx') as db:
+        if blobless is None:
+          blobless = bool(cone)
+        ret = self._fetch(git_dir, db, shallow, quiet, commit, blobless=blobless)
+        if False and cone:
+          want_list = self._build_cone_want_list(ref=commit)
+          #print('want_list',want_list)
+          if want_list:
+            self._fetch(git_dir, db, shallow, quiet, commit, want_list=want_list)
 
-    return ret
+      return ret
+    finally:
+      DecompIO.kill()
 
 
   def _fetch(self, git_dir, db, shallow, quiet, commit, blobless=False):
