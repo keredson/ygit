@@ -1,5 +1,8 @@
 import gc, socket, ssl, struct, os, zlib, io, binascii, hashlib, json, collections, time, sys
 
+__version__ = '0.4.0'
+__description__ = 'A tiny (yocto) git client for MicroPython.'
+
 if not hasattr(gc, 'mem_free'):
   class FakeGC:
     def __init__(self):
@@ -395,9 +398,16 @@ def _rmrf(directory):
 def clone(url, directory='.', *, username=None, password=None, ref='HEAD', shallow=True, cone=None, quiet=False):
   '''
     Clones a repository.
-    URL should be an HTTP/S endpoint.  Ex: https://github.com/keredson/ygit.git
-    Use username/password for HTTP authentication.  If Github, us your personal access token as your password (just like regular git).
-    See: https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/creating-a-personal-access-token
+
+    :param url: An HTTP/S endpoint.  Ex: ``https://github.com/keredson/ygit.git`` 
+    :param directory: The directory to clone into. 
+    :param ref: The revision to fetch if shallow.
+    :param username: Username for HTTP authentication.
+    :param password: Password or personally access token for HTTP authentication.  See: https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/creating-a-personal-access-token
+    :param cone: Only checkout files in this subdirectory, as if they were in the root directory.  Useful for if the code you want on your microcontroller is in a subdirectory of your repo.
+    :param shallow: Only download trees/blobs for specified revision (not all history). 
+    :param quiet: Passed to the git server.
+
   '''
   if isinstance(ref,str):
     ref = ref.encode()
@@ -749,10 +759,12 @@ class Repo:
   def fetch(self, shallow=True, quiet=False, ref='HEAD', blobless=None):
     '''
       Incrementally pulls new objects from the upstream repo.
-      shallow: Only download trees/blobs for specified revision (not all history). 
-      quiet: Passed to the git server.
-      ref: The revision to fetch if shallow.
-      blobless: Only pull commits/trees, not blobs.  (IE download the filesystem structure, not the files themselves.)
+
+      :param shallow: Only download trees/blobs for specified revision (not all history). 
+      :param quiet: Passed to the git server.
+      :param ref: The revision to fetch if shallow.
+      :param blobless: Only pull commits/trees, not blobs.  (IE download the filesystem structure, not the files themselves.)
+      :returns updated: If updates were found. 
     '''
     try:
       directory = self._dir
