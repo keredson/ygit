@@ -45,6 +45,7 @@ repo.tags()
 repo.branches()
 repo.pulls()
 repo.update_authentication(username, password)
+repo.log()
 ```
 A `ref` is one of: 
 - `HEAD`

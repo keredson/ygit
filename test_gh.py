@@ -1,4 +1,4 @@
-import os, tempfile, hashlib, subprocess
+import os, tempfile, hashlib, subprocess, io
 
 import ygit
 
@@ -52,4 +52,20 @@ def test_cone():
     assert os.path.isfile(os.path.join(td,'SubFolder/third_layer.py'))
 
 
+def test_log():
+  with tempfile.TemporaryDirectory() as td:
+    repo = ygit.clone('https://github.com/turfptax/ugit_test.git', td, ref='cde9c4e1c7a178bb81ccaefb74824cc01e3638e7')
+    out = io.StringIO()
+    repo.log(out=out)
+    assert '''commit cde9c4e1c7a178bb81ccaefb74824cc01e3638e7
+author TURFPTAx <40579046+turfptax@users.noreply.github.com> 1671494080 -0800
+committer {commit.committer}
+    Update boot.py
+
+Parent b90c2ccb54e9c27d37fbe861b873d98415921c09 not available in this shallow clone.
+Run repo.fetch('b90c2ccb54e9c27d37fbe861b873d98415921c09', blobless=True) to retrieve more history.
+Add shallow=False to fetch all history.
+''' == out.getvalue()
+
+    
 

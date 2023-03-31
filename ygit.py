@@ -83,7 +83,7 @@ try: FileNotFoundError
 except NameError:
   FileNotFoundError = OSError
 
-Commit = collections.namedtuple("Commit", ("tree", "author"))
+Commit = collections.namedtuple("Commit", ('tree', 'parents', 'author', 'committer', 'message'))
 
 class DB:
   def __init__(self, fn):
@@ -480,14 +480,14 @@ class Repo:
 
   def checkout(self, ref='HEAD'):
     git_dir = self._git_dir
-    commit = self._ref_to_commit(git_dir, ref)
+    commit = self._ref_to_commit(ref)
     if not commit:
       raise Exception(f'unknown ref: {ref}')
     with DB(f'{self._git_dir}/config') as config:
       cone = json.loads(config[b'cone']) if b'cone' in config else None
     with DB(f'{git_dir}/idx') as db:
       print('checking out', commit.decode())
-      commit = self._get_commit(git_dir, db, commit)
+      commit = self._get_commit(db, commit)
       for mode, fn, digest in self._walk_tree(git_dir, db, self._dir, commit.tree):
         #print('entry', repr(mode), int(mode), fn, binascii.hexlify(digest) if digest else None, cone)
         if cone:
@@ -504,17 +504,40 @@ class Repo:
           print('ignoring submodule:', fn)
         else:
           self._checkout_file(git_dir, db, fn, digest)
+  
+  
+  def log(self, ref='HEAD', out=None):
+    if not out: out = sys.stdout
+    sig = self._ref_to_commit(ref)
+    with DB(f'{self._git_dir}/idx') as db:
+      while commit := self._get_commit(db, sig, autofetch=False):
+        out.write(f'commit {sig.decode()}\n')
+        if len(commit.parents)>1:
+          out.write('merge %s\n' % ' '.join(commit.parents))
+        out.write(f'author {commit.author}\n')
+        out.write('committer {commit.committer}\n')
+        for line in commit.message.splitlines():
+          out.write('    ')
+          out.write(line)
+          out.write('\n')
+        out.write('\n')
+        sig = commit.parents[0].encode() if commit.parents else None
+    if sig and not commit:
+      out.write(f'Parent {sig.decode()} not available in this shallow clone.\n')
+      out.write(f'Run repo.fetch({repr(sig.decode())}, blobless=True) to retrieve more history.\n')
+      out.write(f'Add shallow=False to fetch all history.\n')
+      
 
 
   def status(self, out=sys.stdout, ref='HEAD'):
     changes = False
     git_dir = self._git_dir
-    commit = self._ref_to_commit(git_dir, ref)
+    commit = self._ref_to_commit(ref)
     if not commit:
       raise Exception(f'unknown ref: {ref}')
     with DB(f'{git_dir}/idx') as db:
       print('status of', commit.decode())
-      commit = self._get_commit(git_dir, db, commit)
+      commit = self._get_commit(db, commit)
       for mode, fn, digest in self._walk_tree(git_dir, db, self._dir, commit.tree):
         if int(mode)==40000:
           if not _isdir(fn):
@@ -531,13 +554,13 @@ class Repo:
   def _build_cone_want_list(self, ref='HEAD'):
     want_list = [] # binary (not hex) digests
     git_dir = self._git_dir
-    commit = self._ref_to_commit(git_dir, ref)
+    commit = self._ref_to_commit(ref)
     if not commit:
       raise Exception(f'unknown ref: {ref}')
     with DB(f'{self._git_dir}/config') as db:
       cone = json.loads(db[b'cone']) if b'cone' in db else None
     with DB(f'{self._git_dir}/idx') as idx:
-      commit = self._get_commit(git_dir, idx, commit)
+      commit = self._get_commit(idx, commit)
       for mode, fn, digest in self._walk_tree(git_dir, idx, self._dir, commit.tree):
         fn = fn[len(self._dir)+1:]
         if digest and digest not in idx and fn.startswith(cone):
@@ -578,24 +601,31 @@ class Repo:
     return status
 
 
-  def _get_commit(self, git_dir, db, commit):
-    if binascii.unhexlify(commit) not in db:
-      self._fetch(git_dir, db, True, False, commit)
-    idx = db[binascii.unhexlify(commit)]
+  def _get_commit(self, db, commit, autofetch=True):
+    if autofetch and binascii.unhexlify(commit) not in db:
+      self._fetch(self._git_dir, db, True, False, commit)
+    idx = db.get(binascii.unhexlify(commit))
+    if not idx and not autofetch: return None
+    if not idx: raise Exception(f'Could not find {commit.decode()} ever after fetch.  This is eiter a bug in ygit or a corrupted git repository.  Please open an issue here: https://github.com/keredson/ygit/issues/new')
     pkt_id, kind, pos, size, ostart = struct.unpack('QBQQQ', idx)
     assert kind==1
-    fn = f'{git_dir}/{pkt_id}.pack'
+    fn = f'{self._git_dir}/{pkt_id}.pack'
     with open(fn, 'rb') as f:
       f.seek(pos)
       s1 = DecompIO(f)
-      tree, author = None, None
+      tree, parents, author, committer = None, [], None, None
       while line:=s1.readline():
         if line==b'\n': break
         k,v = line.split(b' ',1)
         if k==b'tree': tree = v.strip().decode()
+        if k==b'parent': parents.append(v.strip().decode())
         if k==b'author': author = v.strip().decode()
+        if k==b'committer': committer = v.strip().decode()
+      message = io.BytesIO()
+      while data := s1.read(256):
+        message.write(data)
       del s1
-    return Commit(tree, author)
+    return Commit(tree, parents, author, committer, message.getvalue().decode())
 
   
   def _walk_tree(self, git_dir, db, directory, ref):
@@ -649,19 +679,19 @@ class Repo:
       return [k[len(b'refs/pull/'):].decode() for k in db if k.startswith(b'refs/pull/')]
   
 
-  def _ref_to_commit(self, git_dir, ref):
+  def _ref_to_commit(self, ref):
     if isinstance(ref,str):
       ref = ref.encode()
     if len(ref)==40:
       return ref
-    with DB(f'{git_dir}/refs') as db:
+    with DB(f'{self._git_dir}/refs') as db:
       for possible_ref in [ref, b'refs/heads/'+ref, b'refs/tags/'+ref, b'refs/pull/'+ref]:
         if possible_ref in db:
          return binascii.hexlify(db[possible_ref])
     return None
 
   
-  def fetch(self, shallow=True, quiet=False, ref='HEAD'):
+  def fetch(self, shallow=True, quiet=False, ref='HEAD', blobless=None):
     directory = self._dir
     if isinstance(ref,str):
       ref = ref.encode()
@@ -685,7 +715,7 @@ class Repo:
       HEAD = binascii.hexlify(db[b'HEAD']) if b'HEAD' in db else None # empty repo
     s.close()
     
-    commit = self._ref_to_commit(git_dir, ref)
+    commit = self._ref_to_commit(ref)
 
   #  if requested_rev==b'HEAD':
   #    s,x = _request(repo, data=b'0014command=ls-refs\n0014agent=git/2.37.20016object-format=sha100010009peel\n000csymrefs\n000bunborn\n0014ref-prefix HEAD\n001bref-prefix refs/heads/\n0000')
@@ -695,7 +725,9 @@ class Repo:
   #    print('ORIG_HEAD', ORIG_HEAD, requested_rev, rev)
 
     with DB(f'{git_dir}/idx') as db:
-      ret = self._fetch(git_dir, db, shallow, quiet, commit, blobless=bool(cone))
+      if blobless is None:
+        blobless = bool(cone)
+      ret = self._fetch(git_dir, db, shallow, quiet, commit, blobless=blobless)
       if False and cone:
         want_list = self._build_cone_want_list(ref=commit)
         #print('want_list',want_list)
