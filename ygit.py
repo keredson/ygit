@@ -27,6 +27,7 @@ _master_decompio = None # _DecompIO(io.BytesIO(b'x\x9c\x03\x00\x00\x00\x00\x01')
 
 
 class DecompIO:
+  '''Wrapper for zlib.DecompIO, for memory management and support for seeking.'''
 
   @classmethod
   def kill(cls):
@@ -98,6 +99,7 @@ except NameError:
 Commit = collections.namedtuple("Commit", ('tree', 'parents', 'author', 'committer', 'message'))
 
 class DB:
+  '''Context manager for the btree database.'''
   def __init__(self, fn):
     self._fn = fn
     self._f = None
@@ -200,6 +202,7 @@ def _read_offset(f):
 _ODSDeltaCmd = collections.namedtuple("_ODSDeltaCmd", ('start','append','base_start','nbytes'))
 
 class _ObjReader:
+  '''Handles reading git objects.  See https://git-scm.com/docs/pack-format/2.31.0'''
 
   def __init__(self, f):
     self.f = f
@@ -390,6 +393,12 @@ def _rmrf(directory):
 
 
 def clone(url, directory='.', *, username=None, password=None, ref='HEAD', shallow=True, cone=None, quiet=False):
+  '''
+    Clones a repository.
+    URL should be an HTTP/S endpoint.  Ex: https://github.com/keredson/ygit.git
+    Use username/password for HTTP authentication.  If Github, us your personal access token as your password (just like regular git).
+    See: https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/creating-a-personal-access-token
+  '''
   if isinstance(ref,str):
     ref = ref.encode()
   print(f'cloning {url} into {directory} @ {ref.decode()}')
@@ -415,6 +424,11 @@ class Repo:
     
     
   def update_authentication(self, username, password, url=None):
+    '''
+      Saves a new username/password for future operations.  Credentials are stored on the device, 
+      AES encrypted with the machine id as the key.
+
+    '''
     with DB(f'{self._git_dir}/config') as db:
       self._save_auth(db, username, password, url=url)
     
@@ -494,6 +508,9 @@ class Repo:
 
 
   def checkout(self, ref='HEAD'):
+    '''
+      Updates your files to the revision specified.
+    '''
     try:
       git_dir = self._git_dir
       commit = self._ref_to_commit(ref)
@@ -524,8 +541,10 @@ class Repo:
       DecompIO.kill()
   
   
-  def log(self, ref='HEAD', out=None):
-    if not out: out = sys.stdout
+  def log(self, ref='HEAD', out=sys.stdout):
+    '''
+      Prints to stdout (or a file-like object, via the out parameter) the git log. 
+    '''
     sig = self._ref_to_commit(ref)
     with DB(f'{self._git_dir}/idx') as db:
       while commit := self._get_commit(db, sig, autofetch=False):
@@ -548,6 +567,9 @@ class Repo:
 
 
   def status(self, out=sys.stdout, ref='HEAD'):
+    '''
+      Checks the modification status of local files.  Prints to stdout (or a file-like object, via the out parameter).
+    '''
     changes = False
     git_dir = self._git_dir
     commit = self._ref_to_commit(ref)
@@ -675,6 +697,9 @@ class Repo:
 
 
   def pull(self, shallow=True, quiet=False, ref='HEAD'):
+    '''
+      Performs a fetch(), and if new changes are found, a checkout().
+    '''
     try:
       if self.fetch(quiet=quiet, shallow=shallow, ref=ref):
         self.checkout(ref=ref)
@@ -683,18 +708,27 @@ class Repo:
 
 
   def branches(self):
+    '''
+      Returns a list of known branches.
+    '''
     git_dir = self._git_dir
     with DB(f'{git_dir}/refs') as db:
       return [k[len(b'refs/heads/'):].decode() for k in db if k.startswith(b'refs/heads/')]
   
 
   def tags(self):
+    '''
+      Returns a list of known tags.
+    '''
     git_dir = self._git_dir
     with DB(f'{git_dir}/refs') as db:
       return [k[len(b'refs/tags/'):].decode() for k in db if k.startswith(b'refs/tags/')]
 
     
   def pulls(self):
+    '''
+      Returns a list of known pulls.
+    '''
     git_dir = self._git_dir
     with DB(f'{git_dir}/refs') as db:
       return [k[len(b'refs/pull/'):].decode() for k in db if k.startswith(b'refs/pull/')]
@@ -713,6 +747,13 @@ class Repo:
 
   
   def fetch(self, shallow=True, quiet=False, ref='HEAD', blobless=None):
+    '''
+      Incrementally pulls new objects from the upstream repo.
+      shallow: Only download trees/blobs for specified revision (not all history). 
+      quiet: Passed to the git server.
+      ref: The revision to fetch if shallow.
+      blobless: Only pull commits/trees, not blobs.  (IE download the filesystem structure, not the files themselves.)
+    '''
     try:
       directory = self._dir
       if isinstance(ref,str):
