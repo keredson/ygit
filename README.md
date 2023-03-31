@@ -35,8 +35,6 @@ These are incremental operations.  It will only download git objects you don't a
 
 ## API
 
-[Full Documentation.](https://ygit.readthedocs.io/en/latest/api.html)
-
 ```python
 # make a new clone
 repo = ygit.clone(repo, directory='.', shallow=True, cone=None, 
@@ -60,6 +58,9 @@ A `ref` is one of:
 - `HEAD`
 - a commit (ex: `7b36b4cb1616694d8562f3adea656a709b9831d9`)
 - a branch / tag / pull
+
+Read the [full documentation](https://ygit.readthedocs.io/en/latest/api.html).
+
 
 ## Design
 
