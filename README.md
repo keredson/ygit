@@ -34,6 +34,9 @@ These are incremental operations.  It will only download git objects you don't a
 
 
 ## API
+
+[Full Documentation.](https://ygit.readthedocs.io/en/latest/api.html)
+
 ```python
 # make a new clone
 repo = ygit.clone(repo, directory='.', shallow=True, cone=None, 
