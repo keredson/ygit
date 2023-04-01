@@ -83,7 +83,7 @@ def test_updated_file():
   git.commit('test.txt', message='v1')
   with tempfile.TemporaryDirectory() as td:
     repo = ygit.clone('http://localhost:8889/'+os.path.basename(d),td)
-    with open(os.path.join(td,'test.txt')) as f:
+    with open(os.path.join(d,'test.txt')) as f:
       assert f.read()=='v1'
     with open(os.path.join(d,'test.txt'),'w') as f:
       f.write('v2')
@@ -92,6 +92,50 @@ def test_updated_file():
     with open(os.path.join(td,'test.txt')) as f:
       assert f.read()=='v2'
     assert len([s for s in os.listdir(os.path.join(td,'.ygit')) if s.endswith('.pack')]) == 2
+    
+def test_deleted_file():
+  git, d = build_repo()
+  with open(os.path.join(d,'test.txt'),'w') as f:
+    f.write('v1')
+  git.add('test.txt')
+  os.mkdir(os.path.join(d,'subdir'))
+  with open(os.path.join(d,'subdir', 'test2.txt'),'w') as f:
+    f.write('test2')
+  git.add('test.txt','subdir/test2.txt')
+  git.commit('test.txt', 'subdir/test2.txt', message='v1')
+  assert os.path.isfile(os.path.join(d,'test.txt'))
+  assert os.path.isfile(os.path.join(d,'subdir','test2.txt'))
+  with tempfile.TemporaryDirectory() as td:
+    repo = ygit.clone('http://localhost:8889/'+os.path.basename(d),td)
+    assert os.path.isfile(os.path.join(td,'test.txt'))
+    git.rm('test.txt')
+    git.rm('subdir/test2.txt')
+    git.commit('test.txt', 'subdir/test2.txt', message='removed')
+    repo.pull()
+    assert not os.path.isfile(os.path.join(td,'test.txt'))
+    assert not os.path.isfile(os.path.join(td,'subdir/test2.txt'))
+    
+def test_deleted_file_in_cone():
+  git, d = build_repo()
+  with open(os.path.join(d,'test.txt'),'w') as f:
+    f.write('v1')
+  git.add('test.txt')
+  os.mkdir(os.path.join(d,'subdir'))
+  with open(os.path.join(d,'subdir', 'test2.txt'),'w') as f:
+    f.write('test2')
+  git.add('test.txt','subdir/test2.txt')
+  git.commit('test.txt', 'subdir/test2.txt', message='v1')
+  assert os.path.isfile(os.path.join(d,'test.txt'))
+  assert os.path.isfile(os.path.join(d,'subdir','test2.txt'))
+  with tempfile.TemporaryDirectory() as td:
+    repo = ygit.clone('http://localhost:8889/'+os.path.basename(d),td, cone='subdir')
+    assert os.path.isfile(os.path.join(td,'test2.txt'))
+    git.rm('test.txt')
+    git.rm('subdir/test2.txt')
+    git.commit('test.txt', 'subdir/test2.txt', message='removed')
+    repo.pull()
+    print('sdfkjldsfjhkldsf', td, os.path.isfile(os.path.join(td,'test2.txt')), os.listdir(td))
+    assert not os.path.isfile(os.path.join(td,'test2.txt'))
     
 def test_status():
   git, d = build_repo()

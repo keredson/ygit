@@ -99,7 +99,8 @@ try: FileNotFoundError
 except NameError:
   FileNotFoundError = OSError
 
-Commit = collections.namedtuple("Commit", ('tree', 'parents', 'author', 'committer', 'message'))
+_Commit = collections.namedtuple("Commit", ('tree', 'parents', 'author', 'committer', 'message'))
+_Entry = collections.namedtuple("Entry", ('mode', 'fn', 'sig'))
 
 class DB:
   '''Context manager for the btree database.'''
@@ -386,6 +387,13 @@ def _isdir(fn):
     return False
 
 
+def _exists(fn):
+  try:
+    return bool(os.stat(fn))
+  except OSError:
+    return False
+
+
 def _rmrf(directory):
   git_dir = f'{directory}/.ygit'
   if _isdir(git_dir):
@@ -531,11 +539,10 @@ class Repo:
       with DB(f'{git_dir}/idx') as db:
         print('checking out', commit.decode())
         commit = self._get_commit(db, commit)
-        for mode, fn, digest in self._walk_tree(git_dir, db, self._dir, commit.tree):
-          #print('entry', repr(mode), int(mode), fn, binascii.hexlify(digest) if digest else None, cone)
+        for mode, fn, digest in self._walk_tree_files(git_dir, db, self._dir, commit.tree):
+          print('entry', repr(mode), int(mode), fn, binascii.hexlify(digest) if digest else None, cone)
           if cone:
             repo_fn = fn[len(self._dir)+1:]
-            #print('repo_fn',repo_fn)
             if repo_fn.startswith(cone):
               fn = self._dir + '/' + repo_fn[len(cone):]
             else:
@@ -547,8 +554,27 @@ class Repo:
             print('ignoring submodule:', fn)
           else:
             self._checkout_file(git_dir, db, fn, digest)
+        self._remove_deleted_files(db, commit, cone)
     finally:
       DecompIO.kill()
+  
+  
+  def _remove_deleted_files(self, db, commit, cone):
+    if not commit.parents: return
+    parent = self._get_commit(db, commit.parents[0].encode(), autofetch=False)
+    if not parent: return
+    current_files = {}
+    for directory, files in self._walk_tree(self._git_dir, db, self._dir, commit.tree):
+      print('cureent', directory, files)
+      current_files[directory] = set([e.fn for e in files])
+    for directory, files in self._walk_tree(self._git_dir, db, self._dir, parent.tree):
+      if cone and not directory[len(self._dir)+1:].startswith(cone.rstrip('/')): continue
+      current_dir = current_files.get(directory, set())
+      for entry in files:
+        if entry.fn not in current_dir:
+          full_fn = f'{directory[:-len(cone)]}/{entry.fn}' if cone else f'{directory}/{entry.fn}'
+          if _exists(full_fn) and not _isdir(full_fn):
+            os.remove(full_fn)
   
   
   def log(self, ref='HEAD', out=sys.stdout):
@@ -588,7 +614,7 @@ class Repo:
     with DB(f'{git_dir}/idx') as db:
       print('status of', commit.decode())
       commit = self._get_commit(db, commit)
-      for mode, fn, digest in self._walk_tree(git_dir, db, self._dir, commit.tree):
+      for mode, fn, digest in self._walk_tree_files(git_dir, db, self._dir, commit.tree):
         if int(mode)==40000:
           if not _isdir(fn):
             out.write(f'A {fn}\n')
@@ -611,7 +637,7 @@ class Repo:
       cone = json.loads(db[b'cone']) if b'cone' in db else None
     with DB(f'{self._git_dir}/idx') as idx:
       commit = self._get_commit(idx, commit)
-      for mode, fn, digest in self._walk_tree(git_dir, idx, self._dir, commit.tree):
+      for mode, fn, digest in self._walk_tree_files(git_dir, idx, self._dir, commit.tree):
         fn = fn[len(self._dir)+1:]
         if digest and digest not in idx and fn.startswith(cone):
           want_list.append(digest)
@@ -675,7 +701,7 @@ class Repo:
       while data := s1.read(256):
         message.write(data)
       del s1
-    return Commit(tree, parents, author, committer, message.getvalue().decode())
+    return _Commit(tree, parents, author, committer, message.getvalue().decode())
 
   
   def _walk_tree(self, git_dir, db, directory, ref):
@@ -693,17 +719,22 @@ class Repo:
       while line:=_read_until(s2, b'\x00'):
         digest = s2.read(20)
         mode, fn = line[:-1].decode().split(' ',1)
-        fn = f'{directory}/{fn}'
         if mode=='40000':
-          to_yield.append((mode, fn, None))
+          to_yield.append(_Entry(mode, fn, None))
           next.append((fn, digest))
-        if mode=='160000':
+        elif mode=='160000':
           print('ignoring submodule', fn,'(unsupported)')
         else:
-          to_yield.append((mode, fn, digest))
-      yield from to_yield
+          to_yield.append(_Entry(mode, fn, digest))
+      yield directory, to_yield
       for fn, digest in next:
-        yield from self._walk_tree(git_dir, db, fn, digest)
+        yield from self._walk_tree(git_dir, db, f'{directory}/{fn}', digest)
+
+
+  def _walk_tree_files(self, git_dir, db, directory, ref):
+    for d, files in self._walk_tree(git_dir, db, directory, ref):
+      yield ('40000', f'{d}', None)
+      yield from [(entry.mode, f'{d}/{entry.fn}', entry.sig) for entry in files]
 
 
   def pull(self, shallow=True, quiet=False, ref='HEAD'):

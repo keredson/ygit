@@ -107,7 +107,8 @@ def test_checkout_status():
   pyb.exec_("repo.status(ref='cde9c4e1c7a178bb81ccaefb74824cc01e3638e7', out=out)", stream_output=True)
   out = pyb.exec_('print(out.getvalue())')
   pyb.exit_raw_repl()
-  assert out==b'A ugit_test/Folder\r\nA ugit_test/Folder\r\nD /README.md\r\nD /boot.py\r\nA ugit_test/Folder/SubFolder\r\nA ugit_test/Folder/SubFolder\r\nD /Folder/in_second.py\r\nD /Folder/SubFolder/third_layer.py\r\n\r\n'
+  assert out==b'A ugit_test/Folder\r\nD /README.md\r\nD /boot.py\r\nA ugit_test/Folder\r\nA ugit_test/Folder/SubFolder\r\nD /Folder/in_second.py\r\nA ugit_test/Folder/SubFolder\r\nD /Folder/SubFolder/third_layer.py\r\n\r\n'
+
 
 
 def test_branch():
@@ -118,12 +119,13 @@ def test_branch():
     f.write('v1')
   git.add('test.txt')
   git.commit('test.txt', message='v1')
+  main_branch = git.branch(show_current=True).strip()
   git.checkout('-b', 'abranch')
   with open(os.path.join(d,'branch.txt'),'w') as f:
     f.write('a branch')
   git.add('branch.txt')
   git.commit('branch.txt', message='added a branch')
-  git.checkout('master')
+  git.checkout(main_branch)
   pyb.exec_('import ygit, io, os', stream_output=True)
   pyb.exec_("repo = ygit.Repo('test_branch')", stream_output=True)
   pyb.exec_(f"repo._init('http://{get_ip()}:8889/{os.path.basename(d)}')", stream_output=True)
