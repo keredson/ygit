@@ -12,6 +12,15 @@ def test_clone():
     assert os.path.isfile(os.path.join(td,'ygit.py'))
 
     
+def test_deep_clone():
+  with tempfile.TemporaryDirectory() as td:
+    repo = ygit.clone('https://github.com/keredson/ygit.git',td, shallow=False)
+    assert os.path.isdir(os.path.join(td,'.ygit'))
+    assert os.path.isfile(os.path.join(td,'.ygit','config'))
+    assert os.path.isfile(os.path.join(td,'.ygit','idx'))
+    assert os.path.isfile(os.path.join(td,'ygit.py'))
+
+    
 def test_big_clone():
   with tempfile.TemporaryDirectory() as td:
     repo = ygit.clone('https://github.com/gitpython-developers/GitPython.git', td, ref='f25333525425ee1497366fd300a60127aa652d79')

@@ -39,6 +39,30 @@ def test_clone():
       assert f.read()=='woot!'
 
     
+def test_deep_clone():
+  git, d = build_repo()
+  with open(os.path.join(d,'test.txt'),'w') as f:
+    f.write('woot!')
+  os.mkdir(os.path.join(d,'subdir'))
+  with open(os.path.join(d,'subdir/subtext.txt'),'w') as f:
+    f.write('woot!')
+  git.add('test.txt', 'subdir/subtext.txt')
+  git.commit('test.txt', 'subdir/subtext.txt', message='-')
+  with open(os.path.join(d,'test.txt'),'w') as f:
+    f.write('woot2')
+  git.commit('test.txt', message='-')
+  with open(os.path.join(d,'test.txt'),'w') as f:
+    f.write('woot3')
+  git.commit('test.txt', message='-')
+  with tempfile.TemporaryDirectory() as td:
+    ygit.clone('http://localhost:8889/'+os.path.basename(d),td, shallow=False)
+    assert sorted(os.listdir(td)) == ['.ygit', 'subdir', 'test.txt']
+    assert sorted([s for s in os.listdir(os.path.join(td,'.ygit')) if not s.endswith('.pack')]) == ['config', 'idx', 'refs']
+    assert len([s for s in os.listdir(os.path.join(td,'.ygit')) if s.endswith('.pack')]) == 1
+    with open(os.path.join(td,'test.txt')) as f:
+      assert f.read()=='woot3'
+
+    
 def test_clone_empty_repo():
   git, d = build_repo()
   with tempfile.TemporaryDirectory() as td:

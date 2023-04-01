@@ -200,8 +200,9 @@ def get_ip():
 
 if __name__=='__main__':
   init_board()
-  print('maybe try:')
-  print("import ygit; ygit.clone('https://github.com/turfptax/ugit_test.git','ugit_test')")
-  print("import ygit; ygit.clone('https://github.com/gitpython-developers/GitPython.git','GitPython')")
+  print('maybe try (small, medium, large):')
+  print("import ygit; repo = ygit.clone('https://github.com/turfptax/ugit_test.git','ugit_test')")
+  print("import ygit; repo = ygit.clone('https://github.com/keredson/ygit.git','ygit')")
+  print("import ygit; repo = ygit.clone('https://github.com/gitpython-developers/GitPython.git','GitPython')")
   
 

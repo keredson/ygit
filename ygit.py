@@ -50,10 +50,10 @@ class DecompIO:
     before = gc.mem_free()
     self._orig_f.seek(self._orig_f_pos)
     gc.collect() # wtf - commenting out this line will cause OOM
-    os.listdir()
     _master_decompio = None
-    gc.collect()
     try:
+      os.listdir()
+      gc.collect()
       _master_decompio = _DecompIO(self._orig_f)
     except MemoryError as e:
       if gc.mem_free() > 32000:
@@ -81,6 +81,7 @@ class DecompIO:
 
   def seek(self, pos):
     global _master_decompio
+    assert self._id == id(_master_decompio)
     if pos < self._pos:
       #reset
       self._phoenix()
@@ -212,12 +213,22 @@ class _ObjReader:
     self.f = f
     self.start = f.tell()
     self.kind, self.size = _read_kind_size(f)
+    if self.kind==6:
+      self._parse_ods_delta()
+      self.end = f.tell()
+    else:
+      self.start_z = f.tell()
   
   # https://git-scm.com/docs/pack-format#_deltified_representation
   def _parse_ods_delta(self):
     if hasattr(self, 'cmds'): return
     offset = _read_offset(self.f)
     self.base_object_offset = self.start - offset
+    return_to = self.f.tell()
+    self.f.seek(self.base_object_offset)
+    self.base_obj = _ObjReader(self.f)
+    self.f.seek(return_to)
+    
     dec_stream = DecompIO(self.f)
     self.cmds = []
     pos = 0
@@ -247,29 +258,33 @@ class _ObjReader:
         self.cmds.append(_ODSDeltaCmd(pos, to_append, None, nbytes))
         pos += nbytes
 
+    #print(f'{self.kind}@{self.start} cmds={len(self.cmds)} => {self.base_obj.kind}@{self.base_obj.start}')
+
+  def get_real_kind(self):
+    if self.kind==6:
+      return self.base_obj.get_real_kind()
+    else:
+      return self.kind
+
   def __enter__(self):
     if self.kind==6: # ofs-delta
-      self._parse_ods_delta()
-      self.return_to_pos = self.f.tell()
+      self.base_f = self.base_obj.__enter__()
       self.pos = 0
-      self.f.seek(self.base_object_offset)
-      self.base_obj_reader = _ObjReader(self.f)
-      self.base_obj_pos = None
       return self
     else:
+      self.f.seek(self.start_z)
       self.decompressed_stream = DecompIO(self.f)
       return self.decompressed_stream
   
   def __exit__(self, type, value, traceback):
     if self.kind==6:
-      del self.base_obj_pos
-      self.base_obj_reader.__exit__(None, None, None)
-      del self.base_obj_reader
-      if hasattr(self, 'decompressed_stream'):
-        del self.decompressed_stream
-      self.f.seek(self.return_to_pos)
+      self.base_obj.__exit__(type, value, traceback)
+      self.f.seek(self.end)
     else:
-      pass
+      del self.decompressed_stream
+      
+  def seek(self, pos):
+    self.pos = pos
     
   def read(self, nbytes):
     if not nbytes: return b''
@@ -281,13 +296,9 @@ class _ObjReader:
       if cmd.append:
         to_append = cmd.append[self.pos-cmd.start:min(nbytes,cmd.nbytes)]
       else:
-        if self.base_obj_pos is None:
-#          print('base_obj_reader.__enter__()')
-          self.base_obj_reader.__enter__()
-          self.base_obj_pos = 0
 #        print('cmd.base_start+self.pos-cmd.start', cmd.base_start, self.pos, cmd.start)
-        self.base_obj_reader.decompressed_stream.seek(cmd.base_start+self.pos-cmd.start)
-        to_append = self.base_obj_reader.decompressed_stream.read(min(nbytes,cmd.nbytes-(self.pos-cmd.start)))
+        self.base_f.seek(cmd.base_start+self.pos-cmd.start)
+        to_append = self.base_f.read(min(nbytes,cmd.nbytes-(self.pos-cmd.start)))
       ret.write(to_append)
       nbytes -= len(to_append)
       self.pos += len(to_append)
@@ -299,10 +310,10 @@ class _ObjReader:
 
   def digest(self):
     print('#',end='')
-    kind = self.kind
+    kind = self.get_real_kind()
+    #print('kind,', self.start, self.kind, kind)
+    assert kind in (1,2,3)
     with self as f:
-      if kind==6:
-        kind = self.base_obj_reader.kind
       h = hashlib.sha1()
       if kind==1: h.update(b'commit ')
       elif kind==2: h.update(b'tree ')
@@ -540,7 +551,7 @@ class Repo:
         print('checking out', commit.decode())
         commit = self._get_commit(db, commit)
         for mode, fn, digest in self._walk_tree_files(git_dir, db, self._dir, commit.tree):
-          print('entry', repr(mode), int(mode), fn, binascii.hexlify(digest) if digest else None, cone)
+          #print('entry', repr(mode), int(mode), fn, binascii.hexlify(digest) if digest else None, cone)
           if cone:
             repo_fn = fn[len(self._dir)+1:]
             if repo_fn.startswith(cone):
@@ -565,7 +576,7 @@ class Repo:
     if not parent: return
     current_files = {}
     for directory, files in self._walk_tree(self._git_dir, db, self._dir, commit.tree):
-      print('cureent', directory, files)
+      #print('cureent', directory, files)
       current_files[directory] = set([e.fn for e in files])
     for directory, files in self._walk_tree(self._git_dir, db, self._dir, parent.tree):
       if cone and not directory[len(self._dir)+1:].startswith(cone.rstrip('/')): continue
@@ -678,6 +689,7 @@ class Repo:
 
 
   def _get_commit(self, db, commit, autofetch=True):
+    if not commit: return None
     if autofetch and binascii.unhexlify(commit) not in db:
       self._fetch(self._git_dir, db, True, False, commit)
     idx = db.get(binascii.unhexlify(commit))
@@ -709,23 +721,25 @@ class Repo:
       ref = binascii.unhexlify(ref)
     data = db[ref]
     pkt_id, kind, pos, size, ostart = struct.unpack('QBQQQ', data)
-    assert kind==2
+    #print('pkt_id, kind, pos, size, ostart', pkt_id, kind, pos, size, ostart)
     fn = f'{git_dir}/{pkt_id}.pack'
     with open(fn, 'rb') as f:
-      f.seek(pos)
+      f.seek(ostart)
+      o = _ObjReader(f)
+      assert o.get_real_kind()==2
       next = []
-      s2 = DecompIO(f)
-      to_yield = []
-      while line:=_read_until(s2, b'\x00'):
-        digest = s2.read(20)
-        mode, fn = line[:-1].decode().split(' ',1)
-        if mode=='40000':
-          to_yield.append(_Entry(mode, fn, None))
-          next.append((fn, digest))
-        elif mode=='160000':
-          print('ignoring submodule', fn,'(unsupported)')
-        else:
-          to_yield.append(_Entry(mode, fn, digest))
+      with o as s2:
+        to_yield = []
+        while line:=_read_until(s2, b'\x00'):
+          digest = s2.read(20)
+          mode, fn = line[:-1].decode().split(' ',1)
+          if mode=='40000':
+            to_yield.append(_Entry(mode, fn, None))
+            next.append((fn, digest))
+          elif mode=='160000':
+            print('ignoring submodule', fn,'(unsupported)')
+          else:
+            to_yield.append(_Entry(mode, fn, digest))
       yield directory, to_yield
       for fn, digest in next:
         yield from self._walk_tree(git_dir, db, f'{directory}/{fn}', digest)
@@ -861,6 +875,7 @@ class Repo:
       print('up to date!')
       return False
 
+    # https://git-scm.com/docs/protocol-v2
     cmd = io.BytesIO()
     cmd.write(b'0011command=fetch0014agent=git/2.37.20016object-format=sha10001000dofs-delta')
     if quiet: cmd.write(b'000fno-progress')
