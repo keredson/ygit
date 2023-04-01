@@ -47,18 +47,20 @@ class DecompIO:
       
   def _phoenix(self):
     global _master_decompio
-    before = gc.mem_free()
-    self._orig_f.seek(self._orig_f_pos)
-    gc.collect() # wtf - commenting out this line will cause OOM
-    _master_decompio = None
     try:
+      before = gc.mem_free()
+      self._orig_f.seek(self._orig_f_pos)
+      gc.collect() # wtf - commenting out this line will cause OOM
+      print('a', gc.mem_free())
       os.listdir()
+      _master_decompio = None
       gc.collect()
+      print('b', gc.mem_free())
       _master_decompio = _DecompIO(self._orig_f)
+      print('c', gc.mem_free())
     except MemoryError as e:
       if gc.mem_free() > 32000:
         print(f"Free memory is {gc.mem_free()}, but ygit could not allocate a contiguous 32k chunk of RAM for the zlib buffer (required for git object decompression).")
-        print("This is likely due to memory fragmentation.  Try using mpy-cross to precompile your python code before copying to the device if you're not already, or search 'micropython memory fragmentation'.")
       else:
         print(f"Free memory is {gc.mem_free()}, less than the 32k ygit needs for the zlib buffer (required for git object decompression).")
       raise e
@@ -81,10 +83,16 @@ class DecompIO:
 
   def seek(self, pos):
     global _master_decompio
+    #_master_decompio = globals()['_master_decompio']
     assert self._id == id(_master_decompio)
     if pos < self._pos:
       #reset
+      print('resetting DecompIO position')
+#      del _master_decompio
+      del globals()['_master_decompio']
+      gc.collect()
       self._phoenix()
+      _master_decompio = globals()['_master_decompio']
     while self._pos < pos:
       toss = _master_decompio.read(min(512,pos-self._pos))
       self._pos += len(toss)
@@ -229,7 +237,9 @@ class _ObjReader:
     self.base_obj = _ObjReader(self.f)
     self.f.seek(return_to)
     
+    print(self, 'about to creat dec_stream in _parse_ods_delta')
     dec_stream = DecompIO(self.f)
+    print(self, 'created', dec_stream, 'in _parse_ods_delta')
     self.cmds = []
     pos = 0
     base_size = _read_little_size(dec_stream)
@@ -257,6 +267,10 @@ class _ObjReader:
         assert nbytes==len(to_append)
         self.cmds.append(_ODSDeltaCmd(pos, to_append, None, nbytes))
         pos += nbytes
+    print(self, 'deleting', dec_stream, 'in _parse_ods_delta')
+    del dec_stream
+    gc.collect()
+    os.listdir()
 
     #print(f'{self.kind}@{self.start} cmds={len(self.cmds)} => {self.base_obj.kind}@{self.base_obj.start}')
 
@@ -265,6 +279,9 @@ class _ObjReader:
       return self.base_obj.get_real_kind()
     else:
       return self.kind
+      
+  def __repr__(self):
+    return f'<OR {id(self)} kind={self.kind} start={self.start}>'
 
   def __enter__(self):
     if self.kind==6: # ofs-delta
@@ -273,7 +290,9 @@ class _ObjReader:
       return self
     else:
       self.f.seek(self.start_z)
+      print(self, 'about to creat self.decompressed_stream in __enter__')
       self.decompressed_stream = DecompIO(self.f)
+      print(self, 'created', self.decompressed_stream, 'in __enter__')
       return self.decompressed_stream
   
   def __exit__(self, type, value, traceback):
@@ -281,6 +300,7 @@ class _ObjReader:
       self.base_obj.__exit__(type, value, traceback)
       self.f.seek(self.end)
     else:
+      print(self, 'destroying', self.decompressed_stream)
       del self.decompressed_stream
       
   def seek(self, pos):
@@ -323,6 +343,7 @@ class _ObjReader:
       h.update(b'\x00')
       while data := f.read(512):
         h.update(data)
+      del f
     digest = h.digest()
     return digest
     
@@ -336,6 +357,7 @@ def _read_until(f, stop_byte):
 
     
 def _parse_pkt_file(git_dir, fn, pkt_id, db):
+  print(f'_parse_pkt_file({repr(git_dir)}, {repr(fn)}, {repr(pkt_id)}, {repr(db)})')
 #  pkt_id = int(fn.split('.')[0])
   with open(fn,'rb') as f:
     assert f.read(4)==b'PACK'
