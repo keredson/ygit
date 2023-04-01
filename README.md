@@ -104,41 +104,10 @@ fetching: https://github.com/keredson/ygit.git @ HEAD
 fetching commit: bc0f8c042d06f3c78be2066af11419357d1b6e0e
 Enumerating objects: 26, done.
 Counting objects:   3% (1/26)
-Counting objects:   7% (2/26)
-Counting objects:  11% (3/26)
-Counting objects:  23% (6/26)
-Counting objects:  34% (9/26)
-Counting objects:  38% (10/26)
-Counting objects:  46% (12/26)
-Counting objects:  53% (14/26)
-Counting objects:  57% (15/26)
-Counting objects:  65% (17/26)
-Counting objects:  69% (18/26)
-Counting objects:  76% (20/26)
-Counting objects:  84% (22/26)
-Counting objects:  92% (24/26)
-Counting objects:  96% (25/26)
-Counting objects: 100% (26/26)
+[...]
 Counting objects: 100% (26/26), done.
 Compressing objects:   8% (2/24)
-Compressing objects:  12% (3/24)
-Compressing objects:  16% (4/24)
-Compressing objects:  20% (5/24)
-Compressing objects:  25% (6/24)
-Compressing objects:  29% (7/24)
-Compressing objects:  33% (8/24)
-Compressing objects:  37% (9/24)
-Compressing objects:  41% (10/24)
-Compressing objects:  45% (11/24)
-Compressing objects:  54% (13/24)
-Compressing objects:  58% (14/24)
-Compressing objects:  62% (15/24)
-Compressing objects:  66% (16/24)
-Compressing objects:  75% (18/24)
-Compressing objects:  79% (19/24)
-Compressing objects:  95% (22/24)
-(23/24)
-Compressing objects: 100% (24/24)
+[...]
 Compressing objects: 100% (24/24), done.
 >>>>>>>>>>>>>>>>>>>>>>>
 Total 26 (delta 0), reused 15 (delta 0), pack-reused 0
