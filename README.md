@@ -86,3 +86,91 @@ as the password (just like w/ regular `git`).
 - `pytest test_localhost.py` (runs local tests) 
 - `pytest test_gh.py` (runs github tests)
 - `pytest test_micropython.py` (**WARNING:** will wipe all files except `boot.py` from your MicroPython device at `/dev/ttyUSB0`.)
+
+
+## Example Run
+```
+$ picocom /dev/ttyUSB0 -b 115200
+
+MicroPython v1.19.1 on 2022-06-18; ESP32 module with ESP32
+Type "help()" for more information.
+
+>>> import ygit
+>>> repo = ygit.clone('https://github.com/keredson/ygit.git','ygit')
+cloning https://github.com/keredson/ygit.git into ygit @ HEAD
+fetching: https://github.com/keredson/ygit.git @ HEAD
+fetching commit: bc0f8c042d06f3c78be2066af11419357d1b6e0e
+Enumerating objects: 26, done.
+Counting objects:   3% (1/26)
+Counting objects:   7% (2/26)
+Counting objects:  11% (3/26)
+Counting objects:  23% (6/26)
+Counting objects:  34% (9/26)
+Counting objects:  38% (10/26)
+Counting objects:  46% (12/26)
+Counting objects:  53% (14/26)
+Counting objects:  57% (15/26)
+Counting objects:  65% (17/26)
+Counting objects:  69% (18/26)
+Counting objects:  76% (20/26)
+Counting objects:  84% (22/26)
+Counting objects:  92% (24/26)
+Counting objects:  96% (25/26)
+Counting objects: 100% (26/26)
+Counting objects: 100% (26/26), done.
+Compressing objects:   8% (2/24)
+Compressing objects:  12% (3/24)
+Compressing objects:  16% (4/24)
+Compressing objects:  20% (5/24)
+Compressing objects:  25% (6/24)
+Compressing objects:  29% (7/24)
+Compressing objects:  33% (8/24)
+Compressing objects:  37% (9/24)
+Compressing objects:  41% (10/24)
+Compressing objects:  45% (11/24)
+Compressing objects:  54% (13/24)
+Compressing objects:  58% (14/24)
+Compressing objects:  62% (15/24)
+Compressing objects:  66% (16/24)
+Compressing objects:  75% (18/24)
+Compressing objects:  79% (19/24)
+Compressing objects:  95% (22/24)
+(23/24)
+Compressing objects: 100% (24/24)
+Compressing objects: 100% (24/24), done.
+>>>>>>>>>>>>>>>>>>>>>>>
+Total 26 (delta 0), reused 15 (delta 0), pack-reused 0
+##########################
+checking out bc0f8c042d06f3c78be2066af11419357d1b6e0e
+writing: ygit/.gitignore (BLOB)
+writing: ygit/.readthedocs.yml (BLOB)
+writing: ygit/LICENSE (BLOB)
+writing: ygit/README.md (BLOB)
+writing: ygit/deploy.sh (BLOB)
+writing: ygit/pyproject.toml (BLOB)
+writing: ygit/requirements.txt (BLOB)
+writing: ygit/setup.py (BLOB)
+writing: ygit/test_gh.py (BLOB)
+writing: ygit/test_localhost.py (BLOB)
+writing: ygit/test_micropython.py (BLOB)
+writing: ygit/ygit.py (BLOB)
+writing: ygit/docs/Makefile (BLOB)
+writing: ygit/docs/api.rst (BLOB)
+writing: ygit/docs/conf.py (BLOB)
+writing: ygit/docs/index.rst (BLOB)
+writing: ygit/docs/make.bat (BLOB)
+writing: ygit/docs/usage.rst (BLOB)
+writing: ygit/docs/source/api.rst (BLOB)
+writing: ygit/docs/source/conf.py (BLOB)
+writing: ygit/docs/source/index.rst (BLOB)
+writing: ygit/docs/source/usage.rst (BLOB)
+writing: ygit/misc/header.png (BLOB)
+writing: ygit/misc/header.xcf (BLOB)
+writing: ygit/misc/test_nginx.conf (BLOB)
+>>> 
+>>> repo.pull()
+fetching: https://github.com/keredson/ygit.git @ HEAD
+fetching commit: bc0f8c042d06f3c78be2066af11419357d1b6e0e
+up to date!
+
+```
