@@ -1,4 +1,4 @@
-import os, tempfile, zlib, io, socket, hashlib, json, pytest, mpy_cross
+import os, tempfile, zlib, io, socket, hashlib, json, pytest, mpy_cross, sys
 
 import ampy.files
 import ampy.pyboard
@@ -10,19 +10,20 @@ from test_localhost import build_repo
 pyb = None
 initted = False
 
-def init_board():
+def init_board(clear=True):
   global pyb, initted
   if not pyb:
     pyb = ampy.pyboard.Pyboard('/dev/ttyUSB0', baudrate=115200)
   board_files = ampy.files.Files(pyb)
-  existing_files = board_files.ls(long_format=False)
-  for fn in existing_files:
-    if fn in ('/boot.py','/ygit.mpy',): continue
-    print('removing', fn)
-    try:
-      board_files.rm(fn)
-    except ampy.pyboard.PyboardError:
-      board_files.rmdir(fn)
+  if clear:
+    existing_files = board_files.ls(long_format=False)
+    for fn in existing_files:
+      if fn in ('/boot.py','/ygit.mpy',): continue
+      print('removing', fn)
+      try:
+        board_files.rm(fn)
+      except ampy.pyboard.PyboardError:
+        board_files.rmdir(fn)
   if initted: return pyb
   mpy_cross.run('ygit.py')
   if check_ygit_file(pyb):
@@ -54,7 +55,7 @@ del f'''
   
 
 def copy_ygit_file(pyb, board_files):
-  print('copying ygit...')
+  print('copying: ygit.mpy')
   with open('ygit.mpy','rb') as f:
     board_files.put('ygit.mpy.gz', zlib.compress(f.read()))
   pyb.enter_raw_repl()
@@ -199,7 +200,7 @@ def get_ip():
 
 
 if __name__=='__main__':
-  init_board()
+  init_board(clear='--no-clear' not in sys.argv)
   print('maybe try (small, medium, large):')
   print("import ygit; repo = ygit.clone('https://github.com/turfptax/ugit_test.git','ugit_test')")
   print("import ygit; repo = ygit.clone('https://github.com/keredson/ygit.git','ygit')")
