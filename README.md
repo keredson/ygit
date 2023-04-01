@@ -87,6 +87,8 @@ as the password (just like w/ regular `git`).
 - `pytest test_gh.py` (runs github tests)
 - `pytest test_micropython.py` (**WARNING:** will wipe all files except `boot.py` from your MicroPython device at `/dev/ttyUSB0`.)
 
+As a convenience, running `python test_micropython.py` (note `python` instead of `pytest`) will run only the reset device code.  I 
+typically run `python test_micropython.py && picocom /dev/ttyUSB0 -b 115200` when making a change.
 
 ## Example Run
 ```
