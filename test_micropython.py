@@ -99,6 +99,18 @@ def test_bigger_clone():
   pyb.exit_raw_repl()
 
 
+def test_bigger_deep_clone():
+  pyb = init_board()
+  pyb.enter_raw_repl()
+  pyb.exec_('import ygit, os', stream_output=True)
+  pyb.exec_("repo = ygit.Repo('ygit')", stream_output=True)
+  pyb.exec_("repo._init('https://github.com/keredson/ygit.git')", stream_output=True)
+  pyb.exec_("repo.fetch(shallow=False)", stream_output=True)
+  pyb.exec_("repo.checkout()", stream_output=True)
+  assert 'ygit.py' in pyb.exec_("print(os.listdir('ygit'))").decode().strip()
+  pyb.exit_raw_repl()
+
+
 def test_checkout_status():
   pyb = init_board()
   pyb.enter_raw_repl()
