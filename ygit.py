@@ -26,8 +26,9 @@ except ImportError:
     return io.BytesIO(dec)
 
 
-_master_decompio = None # _DecompIO(io.BytesIO(b'x\x9c\x03\x00\x00\x00\x00\x01')) # compressed empty string
+USE_DECOMPIO_SET_STREAM = hasattr(_DecompIO, 'set_stream') and False
 
+_master_decompio = None #_DecompIO(io.BytesIO(b'x\x9c\x03\x00\x00\x00\x00\x01')) # compressed empty string
 
 class DecompIO:
   '''Wrapper for zlib.DecompIO, for memory management and support for seeking.'''
@@ -46,17 +47,22 @@ class DecompIO:
     self._phoenix()
       
   def _phoenix(self):
-    self._orig_f.seek(self._orig_f_pos)
-    global _master_decompio
-    gc.collect()
-    try:
-      _master_decompio = _DecompIO(self._orig_f)
-    except MemoryError as e:
-      if gc.mem_free() > 32000:
-        print(f"\nFree memory is {gc.mem_free()}, but ygit could not allocate a contiguous 32k chunk of RAM for the zlib buffer (required for git object decompression).")
-      else:
-        print(f"\nFree memory is {gc.mem_free()}, less than the 32k ygit needs for the zlib buffer (required for git object decompression).")
-      raise e
+    global _master_decompio, USE_DECOMPIO_SET_STREAM
+    if _master_decompio and USE_DECOMPIO_SET_STREAM:
+      gc.collect()
+      _master_decompio.set_stream(self._orig_f)
+    else:
+      if _master_decompio: DecompIO.kill()
+      try:
+        _master_decompio = None
+        gc.collect()
+        _master_decompio = _DecompIO(self._orig_f)
+      except MemoryError as e:
+        if gc.mem_free() > 32000:
+          print(f"\nFree memory is {gc.mem_free()}, but ygit could not allocate a contiguous 32k chunk of RAM for the zlib buffer (required for git object decompression).")
+        else:
+          print(f"\nFree memory is {gc.mem_free()}, less than the 32k ygit needs for the zlib buffer (required for git object decompression).")
+        raise e
     self._id = id(_master_decompio)
     self._pos = 0
 
@@ -81,12 +87,12 @@ class DecompIO:
     if pos < self._pos:
       #reset
       print('!',end='') #print('resetting DecompIO position')
-      del globals()['_master_decompio']
       gc.collect()
+      self._orig_f.seek(self._orig_f_pos)
       self._phoenix()
       _master_decompio = globals()['_master_decompio']
     while self._pos < pos:
-      toss = _master_decompio.read(min(512,pos-self._pos))
+      toss = _master_decompio.read(min(128,pos-self._pos))
       self._pos += len(toss)
     assert self._pos == pos
     
@@ -260,7 +266,6 @@ class _ObjReader:
         self.cmds.append(_ODSDeltaCmd(pos, to_append, None, nbytes))
         pos += nbytes
     #print(self, 'deleting', dec_stream, 'in _parse_ods_delta')
-    del dec_stream
     gc.collect()
 
     #print(f'{self.kind}@{self.start} cmds={len(self.cmds)} => {self.base_obj.kind}@{self.base_obj.start}')
@@ -292,7 +297,7 @@ class _ObjReader:
       self.f.seek(self.end)
     else:
       #print(self, 'destroying', self.decompressed_stream)
-      del self.decompressed_stream
+      pass
       
   def seek(self, pos):
     self.pos = pos
@@ -331,9 +336,8 @@ class _ObjReader:
       else: raise Exception('unknown kind', kind)
       h.update(str(self.size).encode())
       h.update(b'\x00')
-      while data := f.read(512):
+      while data := f.read(128):
         h.update(data)
-      del f
     digest = h.digest()
     return digest
     
@@ -352,7 +356,6 @@ def _parse_pkt_file(git_dir, fn, pkt_id, db):
   with open(fn,'rb') as f:
     assert f.read(4)==b'PACK'
     version = struct.unpack('!I', f.read(4))[0]
-    del version
     cnt = struct.unpack('!I', f.read(4))[0]
     #print('reading', cnt, 'objs from', fn)
     for i in range(cnt):
@@ -380,7 +383,7 @@ def _iter_pkt_lines(x, f=None):
       pkt_bytes -= 1
       if channel==b'\x01':
         while pkt_bytes>0:
-          data = x.read(min(512,pkt_bytes))
+          data = x.read(min(128,pkt_bytes))
           pkt_bytes -= len(data)
           if f: f.write(data)
 #        print('>',end='')
@@ -392,7 +395,7 @@ def _iter_pkt_lines(x, f=None):
       else:
         buf.write(channel)
         while pkt_bytes>0:
-          bits = x.read(min(512,pkt_bytes))
+          bits = x.read(min(128,pkt_bytes))
           if not bits: break
           pkt_bytes -= len(bits)
           buf.write(bits)
@@ -446,7 +449,7 @@ def clone(url, directory='.', *, username=None, password=None, ref='HEAD', shall
   repo = Repo(directory)
   repo._init(url, cone=cone, username=username, password=password)
   try:
-    repo.pull(quiet=quiet, shallow=shallow, ref=ref)
+    repo.pull(quiet=quiet, shallow=shallow, ref=ref, _decomp_kill=False)
     return repo
   finally:
     DecompIO.kill()
@@ -548,7 +551,7 @@ class Repo:
         self._save_auth(db, username, password)
 
 
-  def checkout(self, ref='HEAD'):
+  def checkout(self, ref='HEAD', _decomp_kill=True):
     '''
       Updates your files to the revision specified.
     '''
@@ -579,7 +582,7 @@ class Repo:
             self._checkout_file(git_dir, db, fn, digest)
         self._remove_deleted_files(db, commit, cone)
     finally:
-      DecompIO.kill()
+      if _decomp_kill: DecompIO.kill()
   
   
   def _remove_deleted_files(self, db, commit, cone):
@@ -694,9 +697,8 @@ class Repo:
         pkt_f.seek(ostart)
         with _ObjReader(pkt_f) as fin:
           with open(fn, 'wb') as fout:
-            while data:=fin.read(512):
+            while data:=fin.read(128):
               fout.write(data)
-          del fin
     return status
 
 
@@ -722,9 +724,8 @@ class Repo:
         if k==b'author': author = v.strip().decode()
         if k==b'committer': committer = v.strip().decode()
       message = io.BytesIO()
-      while data := s1.read(256):
+      while data := s1.read(128):
         message.write(data)
-      del s1
     return _Commit(tree, parents, author, committer, message.getvalue().decode())
 
   
@@ -763,15 +764,15 @@ class Repo:
       yield from [(entry.mode, f'{d}/{entry.fn}', entry.sig) for entry in files]
 
 
-  def pull(self, shallow=True, quiet=False, ref='HEAD'):
+  def pull(self, shallow=True, quiet=False, ref='HEAD', _decomp_kill=True):
     '''
       Performs a fetch(), and if new changes are found, a checkout().
     '''
     try:
-      if self.fetch(quiet=quiet, shallow=shallow, ref=ref):
-        self.checkout(ref=ref)
+      if self.fetch(quiet=quiet, shallow=shallow, ref=ref, _decomp_kill=_decomp_kill):
+        self.checkout(ref=ref, _decomp_kill=_decomp_kill)
     finally:
-      DecompIO.kill()
+      if _decomp_kill: DecompIO.kill()
 
 
   def branches(self):
@@ -813,7 +814,7 @@ class Repo:
     return None
 
   
-  def fetch(self, shallow=True, quiet=False, ref='HEAD', blobless=None):
+  def fetch(self, shallow=True, quiet=False, ref='HEAD', blobless=None, _decomp_kill=True):
     '''
       Incrementally pulls new objects from the upstream repo.
 
@@ -868,7 +869,7 @@ class Repo:
 
       return ret
     finally:
-      DecompIO.kill()
+      if _decomp_kill: DecompIO.kill()
 
 
   def _fetch(self, git_dir, db, shallow, quiet, commit, blobless=False):

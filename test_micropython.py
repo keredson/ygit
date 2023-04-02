@@ -18,7 +18,7 @@ def init_board(clear=True):
   if clear:
     existing_files = board_files.ls(long_format=False)
     for fn in existing_files:
-      if fn in ('/boot.py','/ygit.mpy',): continue
+      if fn in ('/boot.py','/ygit.mpy','/small.z',): continue
       print('removing', fn)
       try:
         board_files.rm(fn)
@@ -77,21 +77,25 @@ gc.collect()
 def test_gh():
   pyb = init_board()
   pyb.enter_raw_repl()
-  pyb.exec_('import ygit', stream_output=True)
+  pyb.exec_('import ygit, os', stream_output=True)
   pyb.exec_("repo = ygit.Repo('ugit_test')", stream_output=True)
   pyb.exec_("repo._init('https://github.com/turfptax/ugit_test.git')", stream_output=True)
   pyb.exec_("repo.fetch()", stream_output=True)
   pyb.exec_("repo.checkout()", stream_output=True)
+  out = pyb.exec_("print(os.listdir('ugit_test'))")
+  assert out.decode().strip() == "['.ygit', 'Folder', 'README.md', 'boot.py']"
   pyb.exit_raw_repl()
 
 
-def test_big_clone():
+def test_bigger_clone():
   pyb = init_board()
   pyb.enter_raw_repl()
-  pyb.exec_('import ygit', stream_output=True)
-  pyb.exec_("repo = ygit.Repo('GitPython')", stream_output=True)
-  pyb.exec_("repo._init('https://github.com/gitpython-developers/GitPython.git')", stream_output=True)
+  pyb.exec_('import ygit, os', stream_output=True)
+  pyb.exec_("repo = ygit.Repo('ygit')", stream_output=True)
+  pyb.exec_("repo._init('https://github.com/keredson/ygit.git')", stream_output=True)
   pyb.exec_("repo.fetch()", stream_output=True)
+  pyb.exec_("repo.checkout()", stream_output=True)
+  assert 'ygit.py' in pyb.exec_("print(os.listdir('ygit'))").decode().strip()
   pyb.exit_raw_repl()
 
 
@@ -203,7 +207,8 @@ if __name__=='__main__':
   init_board(clear='--no-clear' not in sys.argv)
   print('maybe try (small, medium, large):')
   print("import ygit; repo = ygit.clone('https://github.com/turfptax/ugit_test.git','ugit_test')")
-  print("import ygit; repo = ygit.clone('https://github.com/keredson/ygit.git','ygit')")
+  print("import ygit; repo = ygit.clone('https://github.com/keredson/ygit.git','ygit_shallow')")
   print("import ygit; repo = ygit.clone('https://github.com/gitpython-developers/GitPython.git','GitPython')")
+  print("import ygit; repo = ygit.clone('https://github.com/keredson/ygit.git','ygit_deep', shallow=False)")
   
 
