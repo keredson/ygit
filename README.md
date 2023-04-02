@@ -146,7 +146,7 @@ up to date!
 
 ```
 
-# Known Issues
+## Known Issues
 Every object in a git repo is stored as a zlib compressed stream.  Decompressing requires a 32k buffer, 
 a serious contraint on a device w/ only ~100k available RAM.  `ygit` only ever creates one at a time, but
 sometimes w/ large repos the MicroPython garbage collector will get overwhelmed, or memory get's 
