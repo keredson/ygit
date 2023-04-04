@@ -86,7 +86,7 @@ as the password (just like w/ regular `git`).
 
 
 ## Tests
-- *Prereq:* Run `nginx -c "$(pwd)/misc/test_nginx.conf" -e stderr` in the background for the local teets.
+- *Prereq:* Run `nginx -c "$(pwd)/misc/test_nginx.conf" -e stderr` in the background for the local tests.
 - `pytest test_localhost.py` (runs local tests) 
 - `pytest test_gh.py` (runs github tests)
 - `pytest test_micropython.py` (**WARNING:** will wipe all files except `boot.py` from your MicroPython device at `/dev/ttyUSB0`.)
