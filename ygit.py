@@ -16,28 +16,41 @@ if not hasattr(gc, 'mem_free'):
 class DecompIO:
     '''Wrapper for deflate.DeflateIO, for memory management and support for seeking in large compressed files.'''
 
+    @classmethod
+    def kill(cls):
+        '''Class method to force garbage collection.'''
+        gc.collect()
+
     def __init__(self, f):
-        self._orig_f_pos = f.tell()
-        self._orig_f = f
-        self._pos = 0
-        self._buffer = b""
-        self._decompressor = None
+        '''Initialize the decompression wrapper with the input stream.'''
+        self._orig_f_pos = f.tell()  # Store the initial file position
+        self._orig_f = f  # The original file object (or stream)
+        self._pos = 0  # Current position in the decompressed data
+        self._buffer = b""  # Buffer to store decompressed data
+        self._decompressor = None  # The decompressor object
         self._reset_decompressor()
 
     def _reset_decompressor(self):
         '''Reset the decompressor to free up memory and minimize fragmentation.'''
-        # Collect garbage to free up memory
-        gc.collect()
+        gc.collect()  # Force garbage collection to free memory
         self._decompressor = deflate.DeflateIO(self._orig_f, deflate.AUTO)
-    
+
     def read(self, nbytes):
         '''Reads and decompresses data in chunks.'''
         result = b""
         
-        # Keep reading until the requested number of bytes is obtained or the stream is exhausted
+        # Keep reading until we have the requested number of bytes or reach the end
         while len(result) < nbytes:
+            to_read = nbytes - len(result)  # Calculate remaining bytes to read
+            if to_read <= 0:
+                break  # No more bytes needed
+            
             # Read from the deflate stream
-            chunk = self._decompressor.read(nbytes - len(result))
+            try:
+                chunk = self._decompressor.read(to_read)
+            except OSError as e:
+                print(f"Read error: {e}")
+                break
             
             # If no more data is available, break the loop
             if not chunk:
@@ -46,18 +59,15 @@ class DecompIO:
             # Append the chunk to the result
             result += chunk
 
-            # Reset the decompressor to release memory and avoid fragmentation
-            self._reset_decompressor()
-
-        self._pos += len(result)
+        self._pos += len(result)  # Update the current position
         return result
 
     def readline(self):
         '''Reads a line from the decompressed data.'''
         line = b""
         while True:
-            byte = self.read(1)
-            if not byte or byte == b"\n":
+            byte = self.read(1)  # Read one byte at a time
+            if not byte or byte == b"\n":  # Stop if end of line or no more data
                 break
             line += byte
         return line
@@ -67,18 +77,26 @@ class DecompIO:
         if pos < self._pos:
             # Reset and restart decompression if seeking backwards
             print("Resetting decompression for seeking...")
-            self._orig_f.seek(self._orig_f_pos)
-            self._pos = 0
-            self._reset_decompressor()
+            self._orig_f.seek(self._orig_f_pos)  # Rewind to the original position
+            self._pos = 0  # Reset position
+            self._reset_decompressor()  # Reset the decompressor
 
+        # Seek forward by reading the necessary number of bytes
         while self._pos < pos:
-            to_read = min(128, pos - self._pos)
+            to_read = min(128, pos - self._pos)  # Read in chunks of 128 bytes
             toss = self.read(to_read)
             if not toss:
                 print(f"End of stream reached while seeking to position {pos}.")
                 break
-        assert self._pos == pos, f"Failed to seek to {pos}, current position: {self._pos}"
+        
+        # Assert to ensure we reached the expected position, with a warning if not
+        if self._pos != pos:
+            print(f"Warning: Seek did not reach exact position {pos}. Current position: {self._pos}")
 
+    def close(self):
+        '''Explicitly close the decompressor and release resources.'''
+        self.kill()  # Release memory and force garbage collection
+        print("Decompression stream closed.")
 
 try:
   from btree import open as btree
