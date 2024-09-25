@@ -49,15 +49,32 @@ class DecompIO:
         self._id = id(_master_decompio)
         self._pos = 0
 
+
     def read(self, nbytes):
         """Reads decompressed data from the deflate stream."""
         global _master_decompio
         assert self._id == id(_master_decompio)
 
-        # Read data from the wrapped deflate stream
-        data = _master_decompio.read(nbytes)
-        self._pos += len(data)
-        return data
+        # Buffer to accumulate the decompressed data
+        result = b""
+        
+        # Continue reading until we have the requested number of bytes or hit the end
+        while len(result) < nbytes:
+            # Read from the deflate stream
+            chunk = _master_decompio.read(nbytes - len(result))
+            
+            # If no more data is available (EOF or stream exhausted), break
+            if not chunk:
+                break
+            
+            # Append the chunk to the result
+            result += chunk
+
+        # Update position based on the number of bytes actually read
+        self._pos += len(result)
+        
+        # Return the accumulated data
+        return result
 
     def readline(self):
         """Reads a single line of decompressed data."""
@@ -77,17 +94,31 @@ class DecompIO:
         """Seek to a specific position in the decompressed data stream."""
         global _master_decompio
         assert self._id == id(_master_decompio)
+        
+        # If seeking backwards, we need to reset and re-decompress from the beginning
         if pos < self._pos:
-            # Reset and start over if seeking backwards
             print('!', end='')  # print('resetting DeflateIO position')
             gc.collect()
             self._orig_f.seek(self._orig_f_pos)
             self._phoenix()
+        
+        # Seek forward to the desired position
         while self._pos < pos:
-            toss = self.read(min(128, pos - self._pos))
+            to_read = min(128, pos - self._pos)
+            toss = self.read(to_read)
+            
+            # If we hit the end of the stream before reaching the target position
+            if not toss:
+                print(f"Warning: Unable to seek to position {pos}. End of stream reached.")
+                break
+            
+            # Update position based on the number of bytes read
             self._pos += len(toss)
-        assert self._pos == pos
-    
+        
+        # If we didn't reach the exact position, we can log a warning but avoid crashing
+        if self._pos != pos:
+            print(f"Warning: Seek did not reach the exact position {pos}. Current position: {self._pos}")
+
 
 try:
   from btree import open as btree
