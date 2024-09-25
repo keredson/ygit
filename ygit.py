@@ -13,111 +13,71 @@ if not hasattr(gc, 'mem_free'):
       pass
   gc = FakeGC()
 
-_master_decompio = None  # Placeholder for the deflate.DeflateIO instance
-
 class DecompIO:
-    '''Wrapper for deflate.DeflateIO, for memory management and support for seeking.'''
-
-    @classmethod
-    def kill(cls):
-        global _master_decompio
-        _master_decompio = None
-        gc.collect()
+    '''Wrapper for deflate.DeflateIO, for memory management and support for seeking in large compressed files.'''
 
     def __init__(self, f):
         self._orig_f_pos = f.tell()
         self._orig_f = f
         self._pos = 0
         self._buffer = b""
-        self._phoenix()
+        self._decompressor = None
+        self._reset_decompressor()
 
-    def _phoenix(self):
-        global _master_decompio
-        if _master_decompio:
-            DecompIO.kill()
-        try:
-            _master_decompio = None
-            gc.collect()
-            # Wrap the original stream using deflate.DeflateIO in decompression mode
-            _master_decompio = deflate.DeflateIO(self._orig_f, deflate.ZLIB)
-        except MemoryError as e:
-            if gc.mem_free() > 32000:
-                print(f"\nFree memory is {gc.mem_free()}, but could not allocate memory for the deflate buffer.")
-            else:
-                print(f"\nFree memory is {gc.mem_free()}, insufficient memory for the deflate buffer.")
-            raise e
-        self._id = id(_master_decompio)
-        self._pos = 0
-
-
+    def _reset_decompressor(self):
+        '''Reset the decompressor to free up memory and minimize fragmentation.'''
+        # Collect garbage to free up memory
+        gc.collect()
+        self._decompressor = deflate.DeflateIO(self._orig_f, deflate.AUTO)
+    
     def read(self, nbytes):
-        """Reads decompressed data from the deflate stream."""
-        global _master_decompio
-        assert self._id == id(_master_decompio)
-
-        # Buffer to accumulate the decompressed data
+        '''Reads and decompresses data in chunks.'''
         result = b""
         
-        # Continue reading until we have the requested number of bytes or hit the end
+        # Keep reading until the requested number of bytes is obtained or the stream is exhausted
         while len(result) < nbytes:
             # Read from the deflate stream
-            chunk = _master_decompio.read(nbytes - len(result))
+            chunk = self._decompressor.read(nbytes - len(result))
             
-            # If no more data is available (EOF or stream exhausted), break
+            # If no more data is available, break the loop
             if not chunk:
                 break
-            
+
             # Append the chunk to the result
             result += chunk
 
-        # Update position based on the number of bytes actually read
+            # Reset the decompressor to release memory and avoid fragmentation
+            self._reset_decompressor()
+
         self._pos += len(result)
-        
-        # Return the accumulated data
         return result
 
     def readline(self):
-        """Reads a single line of decompressed data."""
-        global _master_decompio
-        assert self._id == id(_master_decompio)
-
-        # Read until a newline character is encountered
-        data = b""
+        '''Reads a line from the decompressed data.'''
+        line = b""
         while True:
             byte = self.read(1)
             if not byte or byte == b"\n":
                 break
-            data += byte
-        return data
+            line += byte
+        return line
 
     def seek(self, pos):
-        """Seek to a specific position in the decompressed data stream."""
-        global _master_decompio
-        assert self._id == id(_master_decompio)
-        
-        # If seeking backwards, we need to reset and re-decompress from the beginning
+        '''Seek to a specific position in the decompressed data stream.'''
         if pos < self._pos:
-            print('!', end='')  # print('resetting DeflateIO position')
-            gc.collect()
+            # Reset and restart decompression if seeking backwards
+            print("Resetting decompression for seeking...")
             self._orig_f.seek(self._orig_f_pos)
-            self._phoenix()
-        
-        # Seek forward to the desired position
+            self._pos = 0
+            self._reset_decompressor()
+
         while self._pos < pos:
             to_read = min(128, pos - self._pos)
             toss = self.read(to_read)
-            
-            # If we hit the end of the stream before reaching the target position
             if not toss:
-                print(f"Warning: Unable to seek to position {pos}. End of stream reached.")
+                print(f"End of stream reached while seeking to position {pos}.")
                 break
-            
-            # Update position based on the number of bytes read
-            self._pos += len(toss)
-        
-        # If we didn't reach the exact position, we can log a warning but avoid crashing
-        if self._pos != pos:
-            print(f"Warning: Seek did not reach the exact position {pos}. Current position: {self._pos}")
+        assert self._pos == pos, f"Failed to seek to {pos}, current position: {self._pos}"
 
 
 try:
