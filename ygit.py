@@ -1,6 +1,6 @@
-import gc, socket, ssl, struct, os, zlib, io, binascii, hashlib, json, collections, time, sys
+import gc, socket, ssl, struct, os, io, binascii, hashlib, json, collections, time, sys, cryptolib, machine, deflate
 
-__version__ = '0.4.0'
+__version__ = '0.5.0'
 __description__ = 'A tiny (yocto) git client for MicroPython.'
 
 if not hasattr(gc, 'mem_free'):
@@ -13,88 +13,80 @@ if not hasattr(gc, 'mem_free'):
       pass
   gc = FakeGC()
 
-try:
-  from zlib import DecompIO as _DecompIO
-  import cryptolib
-  import machine
-except ImportError:
-  def _DecompIO(f):
-    bytes = f.read()
-    dco = zlib.decompressobj()
-    dec = dco.decompress(bytes)
-    f.seek(f.tell()-len(dco.unused_data))
-    return io.BytesIO(dec)
-
-
-USE_DECOMPIO_SET_STREAM = hasattr(_DecompIO, 'set_stream') and False
-
-_master_decompio = None #_DecompIO(io.BytesIO(b'x\x9c\x03\x00\x00\x00\x00\x01')) # compressed empty string
+_master_decompio = None  # Placeholder for the deflate.DeflateIO instance
 
 class DecompIO:
-  '''Wrapper for zlib.DecompIO, for memory management and support for seeking.'''
+    '''Wrapper for deflate.DeflateIO, for memory management and support for seeking.'''
 
-  @classmethod
-  def kill(cls):
-    global _master_decompio
-    _master_decompio = None
-    gc.collect()
-  
-
-  def __init__(self, f):
-    self._orig_f_pos = f.tell()
-    self._orig_f = f
-    self._pos = 0
-    self._phoenix()
-      
-  def _phoenix(self):
-    global _master_decompio, USE_DECOMPIO_SET_STREAM
-    if _master_decompio and USE_DECOMPIO_SET_STREAM:
-      gc.collect()
-      _master_decompio.set_stream(self._orig_f)
-    else:
-      if _master_decompio: DecompIO.kill()
-      try:
+    @classmethod
+    def kill(cls):
+        global _master_decompio
         _master_decompio = None
         gc.collect()
-        _master_decompio = _DecompIO(self._orig_f)
-      except MemoryError as e:
-        if gc.mem_free() > 32000:
-          print(f"\nFree memory is {gc.mem_free()}, but ygit could not allocate a contiguous 32k chunk of RAM for the zlib buffer (required for git object decompression).")
-        else:
-          print(f"\nFree memory is {gc.mem_free()}, less than the 32k ygit needs for the zlib buffer (required for git object decompression).")
-        raise e
-    self._id = id(_master_decompio)
-    self._pos = 0
 
-  def read(self, nbytes):
-    global _master_decompio
-    assert self._id == id(_master_decompio)
-    data = _master_decompio.read(nbytes)
-    self._pos += len(data)
-    return data
-    
-  def readline(self):
-    global _master_decompio
-    assert self._id == id(_master_decompio)
-    data = _master_decompio.readline()
-    self._pos += len(data)
-    return data
+    def __init__(self, f):
+        self._orig_f_pos = f.tell()
+        self._orig_f = f
+        self._pos = 0
+        self._buffer = b""
+        self._phoenix()
 
-  def seek(self, pos):
-    global _master_decompio
-    #_master_decompio = globals()['_master_decompio']
-    assert self._id == id(_master_decompio)
-    if pos < self._pos:
-      #reset
-      print('!',end='') #print('resetting DecompIO position')
-      gc.collect()
-      self._orig_f.seek(self._orig_f_pos)
-      self._phoenix()
-      _master_decompio = globals()['_master_decompio']
-    while self._pos < pos:
-      toss = _master_decompio.read(min(128,pos-self._pos))
-      self._pos += len(toss)
-    assert self._pos == pos
+    def _phoenix(self):
+        global _master_decompio
+        if _master_decompio:
+            DecompIO.kill()
+        try:
+            _master_decompio = None
+            gc.collect()
+            # Wrap the original stream using deflate.DeflateIO in decompression mode
+            _master_decompio = deflate.DeflateIO(self._orig_f, deflate.ZLIB)
+        except MemoryError as e:
+            if gc.mem_free() > 32000:
+                print(f"\nFree memory is {gc.mem_free()}, but could not allocate memory for the deflate buffer.")
+            else:
+                print(f"\nFree memory is {gc.mem_free()}, insufficient memory for the deflate buffer.")
+            raise e
+        self._id = id(_master_decompio)
+        self._pos = 0
+
+    def read(self, nbytes):
+        """Reads decompressed data from the deflate stream."""
+        global _master_decompio
+        assert self._id == id(_master_decompio)
+
+        # Read data from the wrapped deflate stream
+        data = _master_decompio.read(nbytes)
+        self._pos += len(data)
+        return data
+
+    def readline(self):
+        """Reads a single line of decompressed data."""
+        global _master_decompio
+        assert self._id == id(_master_decompio)
+
+        # Read until a newline character is encountered
+        data = b""
+        while True:
+            byte = self.read(1)
+            if not byte or byte == b"\n":
+                break
+            data += byte
+        return data
+
+    def seek(self, pos):
+        """Seek to a specific position in the decompressed data stream."""
+        global _master_decompio
+        assert self._id == id(_master_decompio)
+        if pos < self._pos:
+            # Reset and start over if seeking backwards
+            print('!', end='')  # print('resetting DeflateIO position')
+            gc.collect()
+            self._orig_f.seek(self._orig_f_pos)
+            self._phoenix()
+        while self._pos < pos:
+            toss = self.read(min(128, pos - self._pos))
+            self._pos += len(toss)
+        assert self._pos == pos
     
 
 try:
