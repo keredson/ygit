@@ -491,7 +491,6 @@ class Repo:
       url = db[b'repo']
     db[b'Basic HTTP auth for '+url] = encrypted
     
-
     
   def _git_upload_pack(self, url, data=None):
     gc.collect()
@@ -919,6 +918,79 @@ class Repo:
 
     s.close()
     return True
+
+  def cleanup(self, keep_latest=True):
+    '''
+    Cleans up the repository by removing older file blobs and unused OFS_DELTAs.
+    
+    :param keep_latest: If True, keeps the latest version of each file.
+    '''
+    git_dir = self._git_dir
+    with DB(f'{git_dir}/idx') as db:
+        # Get the latest commit
+        latest_commit = self._ref_to_commit('HEAD')
+        if not latest_commit:
+            print("No commits found. Nothing to clean up.")
+            return
+
+        # Get all objects in the latest commit
+        used_objects = set()
+        if keep_latest:
+            latest_commit_obj = self._get_commit(db, latest_commit)
+            self._collect_used_objects(db, latest_commit_obj.tree, used_objects)
+
+        # Iterate through all objects and remove old blobs and unused OFS_DELTAs
+        removed_count = 0
+        for key in list(db.keys()):
+            if len(key) == 20:  # SHA-1 hash length
+                idx = db[key]
+                pkt_id, kind, _, _, _ = struct.unpack('QBQQQ', idx)
+                if kind in (3, 6):  # Blob or OFS_DELTA
+                    if not keep_latest or key not in used_objects:
+                        del db[key]
+                        removed_count += 1
+
+        print(f"Removed {removed_count} old blob and OFS_DELTA objects.")
+
+    # Remove unused pack files
+    self._remove_unused_pack_files(git_dir, db)
+
+    print("Cleanup completed.")
+
+  def _collect_used_objects(self, db, tree_hash, used_objects):
+    '''Helper method to recursively collect all objects used in a tree.'''
+    if tree_hash in used_objects:
+        return
+    used_objects.add(tree_hash)
+    
+    tree_data = db[binascii.unhexlify(tree_hash)]
+    pkt_id, kind, pos, size, ostart = struct.unpack('QBQQQ', tree_data)
+    fn = f'{self._git_dir}/{pkt_id}.pack'
+    with open(fn, 'rb') as f:
+        f.seek(ostart)
+        o = _ObjReader(f)
+        with o as s2:
+            while line := _read_until(s2, b'\x00'):
+                digest = s2.read(20)
+                mode, _ = line[:-1].decode().split(' ', 1)
+                if mode != '40000':  # Not a directory
+                    used_objects.add(digest)
+                else:
+                    self._collect_used_objects(db, binascii.hexlify(digest), used_objects)
+
+  def _remove_unused_pack_files(self, git_dir, db):
+    '''Helper method to remove unused pack files.'''
+    used_packs = set()
+    for value in db.values():
+        pkt_id = struct.unpack('QBQQQ', value)[0]
+        used_packs.add(pkt_id)
+
+    for file in os.listdir(git_dir):
+        if file.endswith('.pack'):
+            pack_id = int(file.split('.')[0])
+            if pack_id not in used_packs:
+                os.remove(f'{git_dir}/{file}')
+                print(f"Removed unused pack file: {file}")
 
 
 
