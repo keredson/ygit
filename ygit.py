@@ -1,6 +1,6 @@
-import gc, socket, ssl, struct, os, zlib, io, binascii, hashlib, json, collections, time, sys
+import gc, socket, ssl, struct, os, io, binascii, hashlib, json, collections, time, sys, cryptolib, machine, deflate
 
-__version__ = '0.4.0'
+__version__ = '0.5.0'
 __description__ = 'A tiny (yocto) git client for MicroPython.'
 
 if not hasattr(gc, 'mem_free'):
@@ -13,89 +13,90 @@ if not hasattr(gc, 'mem_free'):
       pass
   gc = FakeGC()
 
-try:
-  from zlib import DecompIO as _DecompIO
-  import cryptolib
-  import machine
-except ImportError:
-  def _DecompIO(f):
-    bytes = f.read()
-    dco = zlib.decompressobj()
-    dec = dco.decompress(bytes)
-    f.seek(f.tell()-len(dco.unused_data))
-    return io.BytesIO(dec)
-
-
-USE_DECOMPIO_SET_STREAM = hasattr(_DecompIO, 'set_stream') and False
-
-_master_decompio = None #_DecompIO(io.BytesIO(b'x\x9c\x03\x00\x00\x00\x00\x01')) # compressed empty string
-
 class DecompIO:
-  '''Wrapper for zlib.DecompIO, for memory management and support for seeking.'''
+    '''Wrapper for deflate.DeflateIO, for memory management and support for seeking in large compressed files.'''
 
-  @classmethod
-  def kill(cls):
-    global _master_decompio
-    _master_decompio = None
-    gc.collect()
-  
-
-  def __init__(self, f):
-    self._orig_f_pos = f.tell()
-    self._orig_f = f
-    self._pos = 0
-    self._phoenix()
-      
-  def _phoenix(self):
-    global _master_decompio, USE_DECOMPIO_SET_STREAM
-    if _master_decompio and USE_DECOMPIO_SET_STREAM:
-      gc.collect()
-      _master_decompio.set_stream(self._orig_f)
-    else:
-      if _master_decompio: DecompIO.kill()
-      try:
-        _master_decompio = None
+    @classmethod
+    def kill(cls):
+        '''Class method to force garbage collection.'''
         gc.collect()
-        _master_decompio = _DecompIO(self._orig_f)
-      except MemoryError as e:
-        if gc.mem_free() > 32000:
-          print(f"\nFree memory is {gc.mem_free()}, but ygit could not allocate a contiguous 32k chunk of RAM for the zlib buffer (required for git object decompression).")
-        else:
-          print(f"\nFree memory is {gc.mem_free()}, less than the 32k ygit needs for the zlib buffer (required for git object decompression).")
-        raise e
-    self._id = id(_master_decompio)
-    self._pos = 0
 
-  def read(self, nbytes):
-    global _master_decompio
-    assert self._id == id(_master_decompio)
-    data = _master_decompio.read(nbytes)
-    self._pos += len(data)
-    return data
-    
-  def readline(self):
-    global _master_decompio
-    assert self._id == id(_master_decompio)
-    data = _master_decompio.readline()
-    self._pos += len(data)
-    return data
+    def __init__(self, f):
+        '''Initialize the decompression wrapper with the input stream.'''
+        self._orig_f_pos = f.tell()  # Store the initial file position
+        self._orig_f = f  # The original file object (or stream)
+        self._pos = 0  # Current position in the decompressed data
+        self._buffer = b""  # Buffer to store decompressed data
+        self._decompressor = None  # The decompressor object
+        self._reset_decompressor()
 
-  def seek(self, pos):
-    global _master_decompio
-    #_master_decompio = globals()['_master_decompio']
-    assert self._id == id(_master_decompio)
-    if pos < self._pos:
-      #reset
-      print('!',end='') #print('resetting DecompIO position')
-      gc.collect()
-      self._orig_f.seek(self._orig_f_pos)
-      self._phoenix()
-      _master_decompio = globals()['_master_decompio']
-    while self._pos < pos:
-      toss = _master_decompio.read(min(128,pos-self._pos))
-      self._pos += len(toss)
-    assert self._pos == pos
-    
+    def _reset_decompressor(self):
+        '''Reset the decompressor to free up memory and minimize fragmentation.'''
+        gc.collect()  # Force garbage collection to free memory
+        self._decompressor = deflate.DeflateIO(self._orig_f, deflate.AUTO)
+
+    def read(self, nbytes):
+        '''Reads and decompresses data in chunks.'''
+        result = b""
+        
+        # Keep reading until we have the requested number of bytes or reach the end
+        while len(result) < nbytes:
+            to_read = nbytes - len(result)  # Calculate remaining bytes to read
+            if to_read <= 0:
+                break  # No more bytes needed
+            
+            # Read from the deflate stream
+            try:
+                chunk = self._decompressor.read(to_read)
+            except OSError as e:
+                print(f"Read error: {e}")
+                break
+            
+            # If no more data is available, break the loop
+            if not chunk:
+                break
+
+            # Append the chunk to the result
+            result += chunk
+
+        self._pos += len(result)  # Update the current position
+        return result
+
+    def readline(self):
+        '''Reads a line from the decompressed data.'''
+        line = b""
+        while True:
+            byte = self.read(1)  # Read one byte at a time
+            if not byte or byte == b"\n":  # Stop if end of line or no more data
+                break
+            line += byte
+        return line
+
+    def seek(self, pos):
+        '''Seek to a specific position in the decompressed data stream.'''
+        if pos < self._pos:
+            # Reset and restart decompression if seeking backwards
+            print("Resetting decompression for seeking...")
+            self._orig_f.seek(self._orig_f_pos)  # Rewind to the original position
+            self._pos = 0  # Reset position
+            self._reset_decompressor()  # Reset the decompressor
+
+        # Seek forward by reading the necessary number of bytes
+        while self._pos < pos:
+            to_read = min(128, pos - self._pos)  # Read in chunks of 128 bytes
+            toss = self.read(to_read)
+            if not toss:
+                print(f"End of stream reached while seeking to position {pos}.")
+                break
+        
+        # Assert to ensure we reached the expected position, with a warning if not
+        if self._pos != pos:
+            print(f"Warning: Seek did not reach exact position {pos}. Current position: {self._pos}")
+
+    def close(self):
+        '''Explicitly close the decompressor and release resources.'''
+        self.kill()  # Release memory and force garbage collection
+        print("Decompression stream closed.")
 
 try:
   from btree import open as btree
@@ -490,7 +491,6 @@ class Repo:
       url = db[b'repo']
     db[b'Basic HTTP auth for '+url] = encrypted
     
-
     
   def _git_upload_pack(self, url, data=None):
     gc.collect()
@@ -918,6 +918,79 @@ class Repo:
 
     s.close()
     return True
+
+  def cleanup(self, keep_latest=True):
+    '''
+    Cleans up the repository by removing older file blobs and unused OFS_DELTAs.
+    
+    :param keep_latest: If True, keeps the latest version of each file.
+    '''
+    git_dir = self._git_dir
+    with DB(f'{git_dir}/idx') as db:
+        # Get the latest commit
+        latest_commit = self._ref_to_commit('HEAD')
+        if not latest_commit:
+            print("No commits found. Nothing to clean up.")
+            return
+
+        # Get all objects in the latest commit
+        used_objects = set()
+        if keep_latest:
+            latest_commit_obj = self._get_commit(db, latest_commit)
+            self._collect_used_objects(db, latest_commit_obj.tree, used_objects)
+
+        # Iterate through all objects and remove old blobs and unused OFS_DELTAs
+        removed_count = 0
+        for key in list(db.keys()):
+            if len(key) == 20:  # SHA-1 hash length
+                idx = db[key]
+                pkt_id, kind, _, _, _ = struct.unpack('QBQQQ', idx)
+                if kind in (3, 6):  # Blob or OFS_DELTA
+                    if not keep_latest or key not in used_objects:
+                        del db[key]
+                        removed_count += 1
+
+        print(f"Removed {removed_count} old blob and OFS_DELTA objects.")
+
+    # Remove unused pack files
+    self._remove_unused_pack_files(git_dir, db)
+
+    print("Cleanup completed.")
+
+  def _collect_used_objects(self, db, tree_hash, used_objects):
+    '''Helper method to recursively collect all objects used in a tree.'''
+    if tree_hash in used_objects:
+        return
+    used_objects.add(tree_hash)
+    
+    tree_data = db[binascii.unhexlify(tree_hash)]
+    pkt_id, kind, pos, size, ostart = struct.unpack('QBQQQ', tree_data)
+    fn = f'{self._git_dir}/{pkt_id}.pack'
+    with open(fn, 'rb') as f:
+        f.seek(ostart)
+        o = _ObjReader(f)
+        with o as s2:
+            while line := _read_until(s2, b'\x00'):
+                digest = s2.read(20)
+                mode, _ = line[:-1].decode().split(' ', 1)
+                if mode != '40000':  # Not a directory
+                    used_objects.add(digest)
+                else:
+                    self._collect_used_objects(db, binascii.hexlify(digest), used_objects)
+
+  def _remove_unused_pack_files(self, git_dir, db):
+    '''Helper method to remove unused pack files.'''
+    used_packs = set()
+    for value in db.values():
+        pkt_id = struct.unpack('QBQQQ', value)[0]
+        used_packs.add(pkt_id)
+
+    for file in os.listdir(git_dir):
+        if file.endswith('.pack'):
+            pack_id = int(file.split('.')[0])
+            if pack_id not in used_packs:
+                os.remove(f'{git_dir}/{file}')
+                print(f"Removed unused pack file: {file}")
 
 
 
